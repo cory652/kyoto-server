@@ -471,6 +471,89 @@ routes['POST /screens/delete'] = async (req, res, body, me) => {
   }
   save(); send(res, 200, { ok: true });
 };
+
+// ---------------- launcher: news + latest version (post them at /admin) ----------------
+// Set ADMIN_KEY on Render (Environment) to a long secret. Without it, posting is disabled.
+const ADMIN_KEY = process.env.ADMIN_KEY || '';
+if (!db.news) db.news = [];
+if (!db.release) db.release = { version: process.env.MOD_VERSION || '6.2.0', url: process.env.KYOTO_JAR_URL || '', notes: '' };
+const adminFails = new Map();
+function isAdmin(req, res) {
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  const f = adminFails.get(ip) || { n: 0, at: 0 };
+  if (f.n >= 8 && Date.now() - f.at < 15 * 60000) { fail(res, 429, 'Too many wrong keys, wait 15 minutes'); return false; }
+  const key = String(req.headers['x-admin-key'] || '');
+  const a = Buffer.from(key), b = Buffer.from(ADMIN_KEY);
+  if (!ADMIN_KEY || a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    adminFails.set(ip, { n: f.n + 1, at: Date.now() }); fail(res, 403, 'Wrong admin key'); return false;
+  }
+  adminFails.delete(ip); return true;
+}
+const NEWS_TAGS = ['Update', 'News', 'Event', 'Cosmetics', 'Fix', 'Sneak peek'];
+routes['GET /news'] = async (req, res) => {
+  const list = db.news.slice().sort((a, b) => (b.pinned - a.pinned) || (b.at - a.at)).slice(0, 30);
+  send(res, 200, { news: list, release: db.release });
+};
+routes['GET /version'] = async (req, res) => send(res, 200, db.release);
+routes['POST /news'] = async (req, res, body) => {
+  if (!isAdmin(req, res)) return;
+  const title = cleanStr(body.title, 90).trim(); const text = String(body.body || '').replace(/\r/g, '').slice(0, 4000).trim();
+  if (!title || !text) return fail(res, 400, 'Title and text are needed');
+  const image = String(body.image || '').trim();
+  if (image && !/^https:\/\/[^\s"'<>]+$/i.test(image)) return fail(res, 400, 'Image must be an https:// link');
+  const item = { id: crypto.randomBytes(5).toString('hex'), title, body: text, tag: NEWS_TAGS.includes(body.tag) ? body.tag : 'News',
+    image, pinned: !!body.pinned, at: Date.now() };
+  if (body.id) { const old = db.news.find(n => n.id === body.id); if (old) { Object.assign(old, item, { id: old.id, at: old.at, edited: Date.now() }); save(); return send(res, 200, { ok: true, id: old.id }); } }
+  db.news.push(item); if (db.news.length > 200) db.news.shift(); save(); send(res, 200, { ok: true, id: item.id });
+};
+routes['POST /news/delete'] = async (req, res, body) => {
+  if (!isAdmin(req, res)) return;
+  db.news = db.news.filter(n => n.id !== body.id); save(); send(res, 200, { ok: true });
+};
+routes['POST /version'] = async (req, res, body) => {
+  if (!isAdmin(req, res)) return;
+  const url = String(body.url || '').trim();
+  if (url && !/^https:\/\/[^\s"'<>]+\.jar(\?[^\s"'<>]*)?$/i.test(url)) return fail(res, 400, 'Download link must be an https:// link to a .jar');
+  db.release = { version: cleanStr(body.version, 20).trim() || db.release.version, url, notes: String(body.notes || '').slice(0, 2000), at: Date.now() };
+  save(); send(res, 200, { ok: true });
+};
+routes['GET /admin'] = async (req, res) => send(res, 200, Buffer.from(ADMIN_PAGE), 'text/html; charset=utf-8');
+const ADMIN_PAGE = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kyoto · News admin</title><style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,Segoe UI,system-ui,sans-serif;background:radial-gradient(1200px 600px at 20% -10%,#1d2030,#08080b 60%);color:#e8eaee;min-height:100vh}
+.wrap{max-width:980px;margin:0 auto;padding:40px 20px}h1{font-size:28px;margin:0 0 4px;letter-spacing:.5px}p.sub{color:#8d929c;margin:0 0 28px}
+.card{background:rgba(20,21,27,.75);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:22px;margin-bottom:18px;backdrop-filter:blur(12px)}
+label{display:block;font-size:12px;color:#9aa0aa;margin:12px 0 6px;text-transform:uppercase;letter-spacing:1.2px}
+input,textarea,select{width:100%;background:#0e0f14;border:1px solid rgba(255,255,255,.1);color:#fff;border-radius:12px;padding:12px 14px;font:inherit;outline:none}
+input:focus,textarea:focus,select:focus{border-color:#cfd3dc}textarea{min-height:160px;resize:vertical}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}button{background:linear-gradient(180deg,#fff,#cfd3dc);color:#0b0b0e;border:0;border-radius:999px;padding:12px 22px;font-weight:700;cursor:pointer;margin-top:16px}
+button.ghost{background:transparent;color:#e8eaee;border:1px solid rgba(255,255,255,.15)}.item{display:flex;gap:14px;align-items:center;padding:12px 0;border-top:1px solid rgba(255,255,255,.06)}
+.tag{font-size:11px;padding:3px 9px;border-radius:999px;background:#e8eaee;color:#0b0b0e;font-weight:700}.muted{color:#8d929c;font-size:13px}.grow{flex:1}#msg{margin-top:12px;color:#a7f3d0}
+</style></head><body><div class="wrap"><h1>Kyoto news</h1><p class="sub">Posts show up in the Kyoto launcher (and anywhere else that reads /news).</p>
+<div class="card"><label>Admin key</label><input id="key" type="password" placeholder="The ADMIN_KEY you set on Render"></div>
+<div class="card"><h3 style="margin:0">New post</h3><input type="hidden" id="id">
+<div class="row"><div><label>Title</label><input id="title" maxlength="90"></div><div><label>Tag</label><select id="tag">${NEWS_TAGS.map(t => `<option>${t}</option>`).join('')}</select></div></div>
+<label>Image link (optional, https://...)</label><input id="image" placeholder="https://i.imgur.com/....png">
+<label>Text (blank line = new paragraph, - at the start = bullet)</label><textarea id="body"></textarea>
+<label><input type="checkbox" id="pinned" style="width:auto"> Pin to the top</label>
+<button onclick="post()">Publish</button> <button class="ghost" onclick="clearForm()">Clear</button><div id="msg"></div></div>
+<div class="card"><h3 style="margin:0 0 6px">Latest version</h3><p class="muted">The launcher downloads this .jar when it changes.</p>
+<div class="row"><div><label>Version</label><input id="ver"></div><div><label>Download link (.jar, https)</label><input id="url" placeholder="https://github.com/you/kyoto/releases/download/v6.2.0/kyoto-client-6.2.0.jar"></div></div>
+<label>What's new</label><textarea id="notes" style="min-height:90px"></textarea><button onclick="saveVer()">Save version</button></div>
+<div class="card"><h3 style="margin:0">Posts</h3><div id="list" class="muted">Loading...</div></div></div>
+<script>
+const $=id=>document.getElementById(id);$('key').value=localStorage.k||'';$('key').oninput=e=>localStorage.k=e.target.value;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function api(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json','X-Admin-Key':$('key').value},body:body?JSON.stringify(body):undefined});const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
+let NEWS=[];async function load(){const j=await api('/news');NEWS=j.news;$('ver').value=j.release.version||'';$('url').value=j.release.url||'';$('notes').value=j.release.notes||'';
+$('list').innerHTML=NEWS.length?NEWS.map(n=>'<div class="item"><span class="tag">'+esc(n.tag)+'</span><div class="grow"><b>'+(n.pinned?'📌 ':'')+esc(n.title)+'</b><div class="muted">'+new Date(n.at).toLocaleString()+'</div></div><button class="ghost" onclick="edit(\\''+n.id+'\\')">Edit</button><button class="ghost" onclick="del(\\''+n.id+'\\')">Delete</button></div>').join(''):'No posts yet.'}
+function clearForm(){['id','title','image','body'].forEach(k=>$(k).value='');$('pinned').checked=false}
+function edit(id){const n=NEWS.find(x=>x.id===id);$('id').value=n.id;$('title').value=n.title;$('tag').value=n.tag;$('image').value=n.image||'';$('body').value=n.body;$('pinned').checked=!!n.pinned;scrollTo(0,0)}
+async function post(){try{await api('/news',{id:$('id').value,title:$('title').value,tag:$('tag').value,image:$('image').value,body:$('body').value,pinned:$('pinned').checked});$('msg').textContent='Published ✓';clearForm();load()}catch(e){$('msg').textContent=e.message}}
+async function del(id){if(!confirm('Delete this post?'))return;try{await api('/news/delete',{id});load()}catch(e){alert(e.message)}}
+async function saveVer(){try{await api('/version',{version:$('ver').value,url:$('url').value,notes:$('notes').value});alert('Saved ✓')}catch(e){alert(e.message)}}
+load();
+</script></body></html>`;
 // owner tools
 function ownerOnly(res, me) { if (!isOwnerUuid(me)) { fail(res, 403, 'Owners only'); return false; } return true; }
 routes['GET /mod/queue'] = async (req, res, body, me) => {
@@ -531,7 +614,8 @@ const server = http.createServer(async (req, res) => {
     if (!handler) return fail(res, 404, 'not found');
     const limit = key === 'PUT /profile/media' ? 22000000 : 2500000;
     const body = (req.method === 'POST' || req.method === 'PUT') ? await readBody(req, limit) : {};
-    const open = key === 'GET /' || key === 'GET /stats' || key.startsWith('POST /auth/') || key === 'POST /cosmetics/bulk';
+    const open = key === 'GET /' || key === 'GET /stats' || key.startsWith('POST /auth/') || key === 'POST /cosmetics/bulk'
+      || key === 'GET /news' || key === 'GET /version' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version';
     let me = null;
     if (!open) { me = auth(req); if (!me) return fail(res, 401, 'not logged in'); }
     await handler(req, res, body, me);

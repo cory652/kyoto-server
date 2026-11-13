@@ -12,6 +12,8 @@ const CAPES = path.join(DATA, 'capes');
 const MEDIA = path.join(DATA, 'profile_media');
 const SKINS = path.join(DATA, 'skins');
 const HUB_IMG = path.join(DATA, 'hub_images');
+const DM_IMG = path.join(DATA, 'dm_images');
+fs.mkdirSync(DM_IMG, { recursive: true });
 fs.mkdirSync(CAPES, { recursive: true });
 fs.mkdirSync(SKINS, { recursive: true });
 fs.mkdirSync(HUB_IMG, { recursive: true });
@@ -113,14 +115,16 @@ const routes = {
   },
 
   'POST /presence': async (req, res, body, me) => {
-    presence.set(me, { lastSeen: Date.now(), server: String(body.server || '').slice(0, 80) });
+    presence.set(me, { lastSeen: Date.now(), server: String(body.server || '').slice(0, 80), join: String(body.join || '').slice(0, 80), calls: !!body.calls });
     send(res, 200, { online: onlineCount() });
   },
 
   'GET /friends': async (req, res, body, me) => {
     const friends = list(db.friends, me).map(u => ({
       uuid: u, name: (db.users[u] || {}).name || '?', online: isOnline(u),
-      server: isOnline(u) ? (presence.get(u) || {}).server || '' : ''
+      server: isOnline(u) ? (presence.get(u) || {}).server || '' : '',
+      join: isOnline(u) ? (presence.get(u) || {}).join || '' : '',
+      calls: isOnline(u) ? !!(presence.get(u) || {}).calls : false
     }));
     const incoming = Object.entries(db.requests).filter(([from, tos]) => tos.includes(me)).map(([from]) => (db.users[from] || {}).name).filter(Boolean);
     const outgoing = list(db.requests, me).map(u => (db.users[u] || {}).name).filter(Boolean);
@@ -377,13 +381,13 @@ routes['GET /dm/threads'] = async (req, res, body, me) => {
   for (const [k, msgs] of Object.entries(H.dms)) {
     if (!k.includes(me) || !msgs.length) continue;
     const other = k.split(':').find(u => u !== me) || me; const last = msgs[msgs.length - 1];
-    threads.push({ name: nameOf(other), last: last.text, at: last.at, fromMe: last.uuid === me });
+    threads.push({ name: nameOf(other), last: last.img ? '[picture]' : last.text, at: last.at, fromMe: last.uuid === me });
   }
   send(res, 200, { threads: threads.sort((a, b) => b.at - a.at).slice(0, 40) });
 };
 routes['GET /dm/with'] = async (req, res, body, me) => {
   const other = byName(q(req).get('name')); if (!other) return fail(res, 404, 'No Kyoto player with that name');
-  send(res, 200, { messages: (H.dms[dmKey(me, other)] || []).slice(-80).map(m => ({ name: nameOf(m.uuid), text: m.text, at: m.at, me: m.uuid === me })) });
+  send(res, 200, { messages: (H.dms[dmKey(me, other)] || []).slice(-80).map(m => ({ name: nameOf(m.uuid), text: m.text || '', img: m.img || null, at: m.at, me: m.uuid === me })) });
 };
 routes['POST /dm/send'] = async (req, res, body, me) => {
   const other = byName(body.to); if (!other) return fail(res, 404, `${body.to} hasn't used Kyoto yet`);
@@ -399,6 +403,72 @@ routes['POST /dm/send'] = async (req, res, body, me) => {
 routes['POST /dm/block'] = async (req, res, body, me) => {
   const other = byName(body.name); if (!other) return fail(res, 404, 'Unknown player');
   const l = list(H.blocks, me); if (!l.includes(other)) l.push(other); save(); send(res, 200, { ok: true });
+};
+
+// ---------------- DM pictures (friends only, PNG/JPG, max 2 MB) ----------------
+routes['POST /dm/image'] = async (req, res, body, me) => {
+  const other = byName(body.to); if (!other) return fail(res, 404, `${body.to} hasn't used Kyoto yet`);
+  if (!areFriends(me, other)) return fail(res, 403, 'You can only send pictures to friends');
+  if (list(H.blocks, other).includes(me)) return fail(res, 403, "You can't message this player");
+  if (isBanned(me)) return fail(res, 403, 'Banned');
+  if (slowmode(me + 'dmimg', 4000)) return fail(res, 429, 'Slow down');
+  let buf; try { buf = Buffer.from(String(body.image || ''), 'base64'); } catch (e) { return fail(res, 400, 'Bad picture'); }
+  const png = buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50; const jpg = buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8;
+  if (!png && !jpg) return fail(res, 400, 'PNG or JPG only');
+  if (buf.length > 2 * 1024 * 1024) return fail(res, 413, 'Max 2 MB');
+  const id = crypto.randomBytes(9).toString('hex');
+  fs.writeFileSync(path.join(DM_IMG, id), buf);
+  const box = H.dms[dmKey(me, other)] || (H.dms[dmKey(me, other)] = []);
+  box.push({ uuid: me, img: id, imgOwners: [me, other], at: Date.now() });
+  while (box.length > 200) { const old = box.shift(); if (old.img) try { fs.unlinkSync(path.join(DM_IMG, old.img)); } catch (e) { /* gone */ } }
+  save(); send(res, 200, { ok: true, id });
+};
+routes['GET /dm/img'] = async (req, res, body, me) => {
+  const id = String(q(req).get('id') || ''); if (!/^[a-f0-9]{18}$/.test(id)) return fail(res, 400, 'bad id');
+  // only the two people in that conversation can load it
+  let ok = false;
+  for (const [k, msgs] of Object.entries(H.dms)) { if (!k.includes(me)) continue; if (msgs.some(m => m.img === id)) { ok = true; break; } }
+  if (!ok) return fail(res, 404, 'not found');
+  const f = path.join(DM_IMG, id); if (!fs.existsSync(f)) return fail(res, 404, 'not found');
+  const buf = fs.readFileSync(f); send(res, 200, buf, buf[0] === 0x89 ? 'image/png' : 'image/jpeg');
+};
+
+// ---------------- shared video screens (per server address) ----------------
+if (!db.screens) db.screens = {};
+const YT = /^https:\/\/(www\.|m\.|music\.)?(youtube\.com|youtu\.be)\//i;
+function screenOut(s) { return Object.assign({}, s, { owner: nameOf(s.ownerUuid) }); }
+routes['GET /screens'] = async (req, res, body, me) => {
+  const key = String(q(req).get('server') || '').toLowerCase().slice(0, 80);
+  send(res, 200, { now: Date.now(), screens: (db.screens[key] || []).map(screenOut) });
+};
+routes['POST /screens/save'] = async (req, res, body, me) => {
+  const key = String(body.server || '').toLowerCase().slice(0, 80); if (!key) return fail(res, 400, 'No server');
+  if (isBanned(me)) return fail(res, 403, 'Banned');
+  const url = String(body.url || '').slice(0, 300);
+  if (url && !YT.test(url)) return fail(res, 400, 'Only YouTube links can go on screens');
+  const num = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d; };
+  const arr = db.screens[key] || (db.screens[key] = []);
+  let s = body.id ? arr.find(x => x.id === body.id) : null;
+  if (s && s.ownerUuid !== me) return fail(res, 403, "That's someone else's screen");
+  if (!s) {
+    if (arr.filter(x => x.ownerUuid === me).length >= 3) return fail(res, 400, 'Max 3 screens per server');
+    if (arr.length >= 40) return fail(res, 400, 'This server has too many screens');
+    s = { id: crypto.randomBytes(4).toString('hex'), ownerUuid: me }; arr.push(s);
+  }
+  Object.assign(s, {
+    dim: String(body.dim || '').slice(0, 60), x: num(body.x, -3e7, 3e7, 0), y: num(body.y, -2048, 4096, 0), z: num(body.z, -3e7, 3e7, 0),
+    yaw: num(body.yaw, -720, 720, 0), w: num(body.w, 1, 16, 4), h: num(body.h, 0.5, 9, 2.25), url,
+    paused: !!body.paused, pausedPos: num(body.pausedPos, 0, 86400, 0),
+    startedAt: body.paused ? 0 : Date.now() - num(body.pos, 0, 86400, 0) * 1000, updated: Date.now()
+  });
+  save(); send(res, 200, { ok: true, id: s.id });
+};
+routes['POST /screens/delete'] = async (req, res, body, me) => {
+  for (const k of Object.keys(db.screens)) {
+    const s = db.screens[k].find(x => x.id === body.id);
+    if (s && (s.ownerUuid === me || isOwnerUuid(me))) db.screens[k] = db.screens[k].filter(x => x !== s);
+  }
+  save(); send(res, 200, { ok: true });
 };
 // owner tools
 function ownerOnly(res, me) { if (!isOwnerUuid(me)) { fail(res, 403, 'Owners only'); return false; } return true; }
@@ -468,5 +538,80 @@ const server = http.createServer(async (req, res) => {
     console.error(e);
     if (!res.headersSent) fail(res, 500, e.message);
   }
+});
+
+// ---------------- friend calls: tiny WebSocket relay (no packages needed) ----------------
+// Text frames: {t:"call"|"accept"|"hangup", name}. Binary frames: Opus audio, forwarded to your call partner.
+const sockets = new Map(); // uuid -> socket
+const callOf = new Map();  // uuid -> partner uuid (active)
+const ringing = new Map(); // callee uuid -> caller uuid
+function wsSend(sock, data, binary) {
+  if (!sock || sock.destroyed) return;
+  const payload = binary ? data : Buffer.from(data);
+  let header;
+  if (payload.length < 126) header = Buffer.from([binary ? 0x82 : 0x81, payload.length]);
+  else if (payload.length < 65536) { header = Buffer.alloc(4); header[0] = binary ? 0x82 : 0x81; header[1] = 126; header.writeUInt16BE(payload.length, 2); }
+  else { header = Buffer.alloc(10); header[0] = binary ? 0x82 : 0x81; header[1] = 127; header.writeBigUInt64BE(BigInt(payload.length), 2); }
+  sock.write(Buffer.concat([header, payload]));
+}
+const wsJson = (uuid, o) => wsSend(sockets.get(uuid), JSON.stringify(o), false);
+function endCall(uuid) {
+  const p = callOf.get(uuid); callOf.delete(uuid);
+  if (p) { callOf.delete(p); wsJson(p, { t: 'end' }); }
+  for (const [callee, caller] of ringing) if (callee === uuid || caller === uuid) { ringing.delete(callee); wsJson(callee === uuid ? caller : callee, { t: 'end' }); }
+}
+function onWsMessage(me, op, data) {
+  if (op === 0x2) { const p = callOf.get(me); if (p && data.length <= 4000) wsSend(sockets.get(p), data, true); return; }
+  if (op !== 0x1) return;
+  let m; try { m = JSON.parse(data.toString('utf8')); } catch (e) { return; }
+  const them = m.name ? byName(m.name) : null;
+  if (m.t === 'call') {
+    if (!them || !areFriends(me, them)) return wsJson(me, { t: 'error', msg: 'You can only call friends' });
+    if (!sockets.has(them)) return wsJson(me, { t: 'error', msg: `${nameOf(them)} isn't online with calls on` });
+    if (list(H.blocks, them).includes(me)) return wsJson(me, { t: 'error', msg: "Can't call this player" });
+    if (callOf.has(them) || ringing.has(them)) return wsJson(me, { t: 'error', msg: `${nameOf(them)} is busy` });
+    endCall(me); ringing.set(them, me); wsJson(them, { t: 'ring', name: nameOf(me) });
+    setTimeout(() => { if (ringing.get(them) === me) { ringing.delete(them); wsJson(me, { t: 'error', msg: 'No answer' }); wsJson(them, { t: 'end' }); } }, 30000);
+  } else if (m.t === 'accept') {
+    const caller = ringing.get(me); if (!caller || caller !== them) return;
+    ringing.delete(me); callOf.set(me, caller); callOf.set(caller, me);
+    wsJson(me, { t: 'start', name: nameOf(caller) }); wsJson(caller, { t: 'start', name: nameOf(me) });
+  } else if (m.t === 'hangup') endCall(me);
+}
+server.on('upgrade', (req, sock) => {
+  try {
+    const url = new URL(req.url, 'http://x');
+    const t = db.tokens[url.searchParams.get('token') || ''];
+    const key = req.headers['sec-websocket-key'];
+    if (url.pathname !== '/ws' || !t || !key) { sock.end('HTTP/1.1 401 Unauthorized\r\n\r\n'); return; }
+    const me = t.uuid;
+    const accept = crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+    sock.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n');
+    const old = sockets.get(me); if (old && old !== sock) old.destroy();
+    sockets.set(me, sock); sock.setNoDelay(true);
+    let buf = Buffer.alloc(0); let frag = null, fragOp = 0;
+    sock.on('data', chunk => {
+      buf = Buffer.concat([buf, chunk]);
+      if (buf.length > 1e6) { sock.destroy(); return; }
+      while (buf.length >= 2) {
+        const fin = (buf[0] & 0x80) !== 0, op = buf[0] & 0x0f, masked = (buf[1] & 0x80) !== 0;
+        let len = buf[1] & 0x7f, off = 2;
+        if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); off = 4; }
+        else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); off = 10; }
+        const need = off + (masked ? 4 : 0) + len; if (buf.length < need) return;
+        let payload = buf.slice(off + (masked ? 4 : 0), need);
+        if (masked) { const mk = buf.slice(off, off + 4); payload = Buffer.from(payload.map((b, i) => b ^ mk[i & 3])); }
+        buf = buf.slice(need);
+        if (op === 0x8) { sock.end(); return; }
+        if (op === 0x9) { const h = Buffer.from([0x8a, payload.length]); sock.write(Buffer.concat([h, payload])); continue; }
+        if (op === 0xA) continue;
+        if (op === 0x0) { if (!frag) continue; frag = Buffer.concat([frag, payload]); if (fin) { onWsMessage(me, fragOp, frag); frag = null; } continue; }
+        if (!fin) { frag = payload; fragOp = op; continue; }
+        onWsMessage(me, op, payload);
+      }
+    });
+    const bye = () => { if (sockets.get(me) === sock) { sockets.delete(me); endCall(me); } };
+    sock.on('close', bye); sock.on('error', bye);
+  } catch (e) { try { sock.destroy(); } catch (e2) { /* ignore */ } }
 });
 server.listen(PORT, () => console.log(`Kyoto server running on port ${PORT}`));

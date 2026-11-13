@@ -10,7 +10,11 @@ const PORT = process.env.PORT || 8080;
 const DATA = process.env.DATA_DIR || path.join(__dirname, 'data');
 const CAPES = path.join(DATA, 'capes');
 const MEDIA = path.join(DATA, 'profile_media');
+const SKINS = path.join(DATA, 'skins');
+const HUB_IMG = path.join(DATA, 'hub_images');
 fs.mkdirSync(CAPES, { recursive: true });
+fs.mkdirSync(SKINS, { recursive: true });
+fs.mkdirSync(HUB_IMG, { recursive: true });
 fs.mkdirSync(MEDIA, { recursive: true });
 // Kyoto staff (crown + "Owner of Kyoto Client"). Change with the OWNERS env var: "name1,name2"
 const OWNERS = (process.env.OWNERS || 'heffm').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
@@ -166,6 +170,23 @@ const routes = {
     send(res, 200, { waypoints: box });
   },
 
+  'PUT /skin': async (req, res, body, me) => {
+    const c = db.cosmetics[me] || (db.cosmetics[me] = { hasCape: false, capeType: 'png', accessory: 0 });
+    if (body.remove) { c.hasSkin = false; }
+    else {
+      const buf = Buffer.from(String(body.skin || ''), 'base64');
+      const isPng = buf.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+      if (!isPng || buf.length > 200000) return fail(res, 400, 'Skin must be a PNG under 200 KB');
+      // PNG width/height live at bytes 16-23
+      const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20);
+      if (w !== 64 || (h !== 64 && h !== 32)) return fail(res, 400, 'Skin must be 64x64');
+      fs.writeFileSync(path.join(SKINS, me.replace(/[^a-f0-9-]/g, '')), buf);
+      c.hasSkin = true;
+    }
+    c.slim = !!body.slim; c.skinVersion = Date.now();
+    save(); send(res, 200, { ok: true });
+  },
+
   'PUT /cosmetics': async (req, res, body, me) => {
     const c = db.cosmetics[me] || { hasCape: false, capeType: 'png', accessory: 0 };
     if (body.removeCape) {
@@ -179,18 +200,20 @@ const routes = {
       fs.writeFileSync(path.join(CAPES, me.replace(/[^a-f0-9-]/g, '')), buf);
       c.hasCape = true; c.capeType = isGif ? 'gif' : 'png';
     }
-    c.accessory = Math.max(0, Math.min(20, body.accessory | 0));
+    c.accessory = Math.max(0, Math.min(40, body.accessory | 0));
     c.version = Date.now();
     db.cosmetics[me] = c; save();
     send(res, 200, { ok: true });
   },
   'POST /cosmetics/bulk': async (req, res, body) => {
     const players = {};
+    const kyoto = [];
     for (const u of (body.uuids || []).slice(0, 100)) {
+      if (db.users[u]) kyoto.push(u);
       const c = db.cosmetics[u];
-      if (c && (c.hasCape || c.accessory)) players[u] = c;
+      if (c && (c.hasCape || c.accessory || c.hasSkin)) players[u] = c;
     }
-    send(res, 200, { players });
+    send(res, 200, { players, kyoto });
   },
 };
 
@@ -234,6 +257,169 @@ routes['PUT /profile/media'] = async (req, res, body, me) => {
   save(); send(res, 200, { ok: true });
 };
 
+// ---------------- Kyoto Hub: posts, setting presets, capes, public chat, DMs ----------------
+db.hub = Object.assign({ posts: [], chat: [], dms: {}, reports: [], bans: [], blocks: {}, seq: 1 }, db.hub || {});
+const H = db.hub;
+const REQUIRE_APPROVAL = process.env.REQUIRE_APPROVAL !== '0'; // image posts wait for an owner to approve them
+const EXTRA_BLOCKED = (process.env.BLOCKED_WORDS || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+const b64 = s => Buffer.from(s, 'base64').toString('utf8');
+// adult / hateful words (base64 so the file doesn't spell them out) - any of these = message refused
+const BLOCK = ['cG9ybg==', 'bnNmdw==', 'aGVudGFp', 'eHh4', 'b25seWZhbnM=', 'bnVkZXM=', 'bnVkZQ==', 'c2V4', 'Y29jaw==', 'cHVzc3k=', 'ZGljaw==',
+  'Y3Vt', 'Ym9vYnM=', 'bmlnZ2Vy', 'bmlnZ2E=', 'ZmFnZ290', 'ZmFn', 'cmV0YXJk', 'a3lz', 'a2lsbCB5b3Vyc2VsZg==', 'dHJhbm55', 'Y2hpbms=',
+  'c3BpYw==', 'a2lrZQ==', 'd2V0YmFjaw==', 'Y29vbg==', 'cmFwZQ=='].map(b64).concat(EXTRA_BLOCKED);
+const MASK = ['ZnVjaw==', 'c2hpdA==', 'Yml0Y2g=', 'YXNz', 'ZGFtbg==', 'Y3JhcA==', 'YmFzdGFyZA==', 'd2hvcmU=', 'c2x1dA=='].map(b64);
+const LEET = { a: '4@', e: '3', i: '1!|', o: '0', s: '5$', t: '7', g: '9' };
+const wordRx = w => new RegExp('(?<![a-z])' + [...w].map(c => c === ' ' ? '\\s+' : '[' + c.replace(/[\]\\^-]/g, '\\$&') + (LEET[c] || '').replace(/[\]\\^-]/g, '\\$&') + ']+').join('') + '(?![a-z])', 'i');
+const BLOCK_RX = BLOCK.map(wordRx), MASK_RX = MASK.map(w => new RegExp(wordRx(w).source, 'gi'));
+const SAFE_SITES = ['youtube.com', 'youtu.be', 'twitch.tv', 'modrinth.com', 'github.com', 'minecraftcapes.net', 'namemc.com', 'minecraftskins.com',
+  'curseforge.com', 'minecraft.net', 'kick.com', 'x.com', 'twitter.com', 'tiktok.com', 'instagram.com', 'guns.lol', 'pastebin.com'];
+const URL_RX = /\b((?:https?:\/\/|www\.)\S+|[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|gg|tv|io|me|co|xyz|ru|onion|link|ly|to|cc|lol|app|dev|site|online|live|club|info|biz|us|uk|de|fr)(?:\/\S*)?)/gi;
+function safeLink(u) {
+  u = u.toLowerCase();
+  if (u.includes('.onion') || /^(https?:\/\/)?\d{1,3}(\.\d{1,3}){3}/.test(u)) return false;
+  if (['bit.ly', 'tinyurl', 't.co/', 'cutt.ly', 'is.gd', 'rb.gy', 'shorturl', 'grabify', 'iplogger', '2no.co'].some(x => u.includes(x))) return false;
+  const host = u.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+  return SAFE_SITES.some(s => host === s || host.endsWith('.' + s));
+}
+function blocked(t) {
+  const low = String(t || '').toLowerCase();
+  return BLOCK_RX.some(r => r.test(low)) || low.includes('.onion') || low.includes('porn') || low.includes('hentai');
+}
+function clean(t, max) {
+  let s = String(t || '').replace(/[\u0000-\u001f‮​]/g, ' ').slice(0, max).trim();
+  s = s.replace(URL_RX, m => safeLink(m) ? m : '[link removed]');
+  for (const r of MASK_RX) s = s.replace(r, '***');
+  return s;
+}
+const nameOf = u => (db.users[u] || {}).name || '?';
+const isOwnerUuid = u => OWNERS.includes(nameOf(u).toLowerCase());
+const isBanned = u => H.bans.includes(u);
+const lastAct = new Map();
+function slowmode(u, ms) { const t = lastAct.get(u) || 0; if (Date.now() - t < ms) return true; lastAct.set(u, Date.now()); return false; }
+function checkText(res, me, text) {
+  if (isBanned(me)) { fail(res, 403, 'You are banned from the Kyoto Hub'); return false; }
+  if (blocked(text)) { fail(res, 400, 'Blocked by the filter (bad words or unsafe content)'); return false; }
+  return true;
+}
+const pub = (p, me) => ({ id: p.id, type: p.type, uuid: p.uuid, name: nameOf(p.uuid), title: p.title, text: p.text, at: p.at,
+  likes: p.likes.length, liked: p.likes.includes(me), hasImage: !!p.image, pending: !!p.pending, owner: isOwnerUuid(p.uuid) });
+const q = req => new URL(req.url, 'http://x').searchParams;
+
+routes['GET /hub/posts'] = async (req, res, body, me) => {
+  const type = q(req).get('type') || 'post';
+  const mod = isOwnerUuid(me);
+  const list = H.posts.filter(p => p.type === type && (!p.pending || mod || p.uuid === me));
+  const sort = q(req).get('sort') === 'top' ? (a, b) => b.likes.length - a.likes.length : (a, b) => b.at - a.at;
+  send(res, 200, { posts: list.sort(sort).slice(0, 60).map(p => pub(p, me)), mod });
+};
+routes['POST /hub/post'] = async (req, res, body, me) => {
+  const type = ['post', 'preset', 'cape'].includes(body.type) ? body.type : 'post';
+  const title = clean(body.title, 40), text = clean(body.text, 300);
+  if (!checkText(res, me, title + ' ' + text)) return;
+  if (slowmode(me + 'post', 30000)) return fail(res, 429, 'Wait 30 seconds between posts');
+  if (!title && !text) return fail(res, 400, 'Write something first');
+  const post = { id: H.seq++, type, uuid: me, title, text, at: Date.now(), likes: [] };
+  if (type === 'preset') {
+    try { const d = JSON.parse(String(body.data || '')); if (String(body.data).length > 40000) throw 0; post.data = JSON.stringify({ modules: d.modules || {}, choices: d.choices || {}, crosshair: d.crosshair || null, vfx: d.vfx || null }); }
+    catch (e) { return fail(res, 400, 'Bad preset'); }
+  }
+  if (type === 'cape') {
+    const buf = Buffer.from(String(body.image || ''), 'base64');
+    const isPng = buf.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), isGif = buf.slice(0, 3).toString() === 'GIF';
+    if ((!isPng && !isGif) || buf.length > 1500000) return fail(res, 400, 'Cape must be a PNG or GIF under 1.5 MB');
+    post.image = isGif ? 'gif' : 'png';
+    fs.writeFileSync(path.join(HUB_IMG, String(post.id)), buf);
+    post.pending = REQUIRE_APPROVAL && !isOwnerUuid(me);
+  }
+  H.posts.push(post); if (H.posts.length > 2000) H.posts.shift();
+  save(); send(res, 200, { ok: true, pending: !!post.pending });
+};
+routes['GET /hub/image'] = async (req, res, body, me) => {
+  const id = Number(q(req).get('id')); const p = H.posts.find(x => x.id === id);
+  if (!p || !p.image || (p.pending && !isOwnerUuid(me) && p.uuid !== me)) return fail(res, 404, 'no image');
+  send(res, 200, fs.readFileSync(path.join(HUB_IMG, String(id))), p.image === 'gif' ? 'image/gif' : 'image/png');
+};
+routes['GET /hub/preset'] = async (req, res, body, me) => {
+  const id = Number(q(req).get('id')); const p = H.posts.find(x => x.id === id && x.type === 'preset');
+  if (!p) return fail(res, 404, 'no preset');
+  send(res, 200, { data: p.data });
+};
+routes['POST /hub/like'] = async (req, res, body, me) => {
+  const p = H.posts.find(x => x.id === Number(body.id)); if (!p) return fail(res, 404, 'gone');
+  p.likes = p.likes.includes(me) ? p.likes.filter(u => u !== me) : p.likes.concat(me); save(); send(res, 200, { likes: p.likes.length });
+};
+routes['POST /hub/delete'] = async (req, res, body, me) => {
+  const p = H.posts.find(x => x.id === Number(body.id)); if (!p) return fail(res, 404, 'gone');
+  if (p.uuid !== me && !isOwnerUuid(me)) return fail(res, 403, 'Not yours');
+  H.posts = H.posts.filter(x => x !== p); try { fs.unlinkSync(path.join(HUB_IMG, String(p.id))); } catch (e) { /* none */ }
+  save(); send(res, 200, { ok: true });
+};
+routes['POST /hub/report'] = async (req, res, body, me) => {
+  if (slowmode(me + 'report', 5000)) return fail(res, 429, 'Slow down');
+  H.reports.push({ kind: String(body.kind || 'post').slice(0, 8), id: String(body.id).slice(0, 20), by: me, reason: clean(body.reason, 100), at: Date.now() });
+  if (H.reports.length > 500) H.reports.shift();
+  save(); send(res, 200, { ok: true });
+};
+routes['GET /chat'] = async (req, res, body, me) => {
+  const since = Number(q(req).get('since')) || 0;
+  send(res, 200, { messages: H.chat.filter(m => m.at > since).slice(-80).map(m => Object.assign({ name: nameOf(m.uuid), owner: isOwnerUuid(m.uuid) }, m)) });
+};
+routes['POST /chat/send'] = async (req, res, body, me) => {
+  const text = clean(body.text, 200);
+  if (!text || !checkText(res, me, text)) return text ? undefined : fail(res, 400, 'Empty');
+  if (slowmode(me + 'chat', 1500)) return fail(res, 429, 'Slow down');
+  H.chat.push({ id: H.seq++, uuid: me, text, at: Date.now() }); if (H.chat.length > 300) H.chat.shift();
+  save(); send(res, 200, { ok: true });
+};
+const dmKey = (a, b) => [a, b].sort().join(':');
+routes['GET /dm/threads'] = async (req, res, body, me) => {
+  const threads = [];
+  for (const [k, msgs] of Object.entries(H.dms)) {
+    if (!k.includes(me) || !msgs.length) continue;
+    const other = k.split(':').find(u => u !== me) || me; const last = msgs[msgs.length - 1];
+    threads.push({ name: nameOf(other), last: last.text, at: last.at, fromMe: last.uuid === me });
+  }
+  send(res, 200, { threads: threads.sort((a, b) => b.at - a.at).slice(0, 40) });
+};
+routes['GET /dm/with'] = async (req, res, body, me) => {
+  const other = byName(q(req).get('name')); if (!other) return fail(res, 404, 'No Kyoto player with that name');
+  send(res, 200, { messages: (H.dms[dmKey(me, other)] || []).slice(-80).map(m => ({ name: nameOf(m.uuid), text: m.text, at: m.at, me: m.uuid === me })) });
+};
+routes['POST /dm/send'] = async (req, res, body, me) => {
+  const other = byName(body.to); if (!other) return fail(res, 404, `${body.to} hasn't used Kyoto yet`);
+  if (other === me) return fail(res, 400, "That's you!");
+  if (list(H.blocks, other).includes(me)) return fail(res, 403, "You can't message this player");
+  const text = clean(body.text, 300);
+  if (!text || !checkText(res, me, text)) return text ? undefined : fail(res, 400, 'Empty');
+  if (slowmode(me + 'dm', 800)) return fail(res, 429, 'Slow down');
+  const box = H.dms[dmKey(me, other)] || (H.dms[dmKey(me, other)] = []);
+  box.push({ uuid: me, text, at: Date.now() }); if (box.length > 200) box.shift();
+  save(); send(res, 200, { ok: true });
+};
+routes['POST /dm/block'] = async (req, res, body, me) => {
+  const other = byName(body.name); if (!other) return fail(res, 404, 'Unknown player');
+  const l = list(H.blocks, me); if (!l.includes(other)) l.push(other); save(); send(res, 200, { ok: true });
+};
+// owner tools
+function ownerOnly(res, me) { if (!isOwnerUuid(me)) { fail(res, 403, 'Owners only'); return false; } return true; }
+routes['GET /mod/queue'] = async (req, res, body, me) => {
+  if (!ownerOnly(res, me)) return;
+  send(res, 200, { pending: H.posts.filter(p => p.pending).map(p => pub(p, me)), reports: H.reports.slice(-50).map(r => Object.assign({ byName: nameOf(r.by) }, r)), bans: H.bans.map(nameOf) });
+};
+routes['POST /mod/approve'] = async (req, res, body, me) => {
+  if (!ownerOnly(res, me)) return; const p = H.posts.find(x => x.id === Number(body.id)); if (p) p.pending = false; save(); send(res, 200, { ok: true });
+};
+routes['POST /mod/ban'] = async (req, res, body, me) => {
+  if (!ownerOnly(res, me)) return; const u = byName(body.name); if (!u) return fail(res, 404, 'Unknown player');
+  if (!H.bans.includes(u)) H.bans.push(u);
+  H.posts = H.posts.filter(p => p.uuid !== u); H.chat = H.chat.filter(m => m.uuid !== u);
+  save(); send(res, 200, { ok: true });
+};
+routes['POST /mod/unban'] = async (req, res, body, me) => {
+  if (!ownerOnly(res, me)) return; const u = byName(body.name); H.bans = H.bans.filter(x => x !== u); save(); send(res, 200, { ok: true });
+};
+routes['POST /mod/clearreports'] = async (req, res, body, me) => { if (!ownerOnly(res, me)) return; H.reports = []; save(); send(res, 200, { ok: true }); };
+
 const server = http.createServer(async (req, res) => {
   try {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -245,6 +431,12 @@ const server = http.createServer(async (req, res) => {
       if (!fs.existsSync(file)) return fail(res, 404, 'no cape');
       const c = db.cosmetics[capeMatch[1]] || {};
       return send(res, 200, fs.readFileSync(file), c.capeType === 'gif' ? 'image/gif' : 'image/png');
+    }
+    const skinMatch = /^\/skin\/([a-f0-9-]{36})$/.exec(url.pathname);
+    if (req.method === 'GET' && skinMatch) {
+      const file = path.join(SKINS, skinMatch[1]);
+      if (!fs.existsSync(file)) return fail(res, 404, 'no skin');
+      return send(res, 200, fs.readFileSync(file), 'image/png');
     }
     const prof = /^\/profile\/([A-Za-z0-9_]{1,16})(?:\/(video|audio))?$/.exec(url.pathname);
     if (req.method === 'GET' && prof) {

@@ -205,6 +205,7 @@ const routes = {
       c.hasCape = true; c.capeType = isGif ? 'gif' : 'png';
     }
     c.accessory = Math.max(0, Math.min(40, body.accessory | 0));
+    c.model = Math.max(0, Math.min(40, body.model | 0));
     c.version = Date.now();
     db.cosmetics[me] = c; save();
     send(res, 200, { ok: true });
@@ -215,7 +216,7 @@ const routes = {
     for (const u of (body.uuids || []).slice(0, 100)) {
       if (db.users[u]) kyoto.push(u);
       const c = db.cosmetics[u];
-      if (c && (c.hasCape || c.accessory || c.hasSkin)) players[u] = c;
+      if (c && (c.hasCape || c.accessory || c.model || c.hasSkin)) players[u] = c;
     }
     send(res, 200, { players, kyoto });
   },

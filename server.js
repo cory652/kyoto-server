@@ -663,6 +663,24 @@ async function del(id){if(!confirm('Delete this post?'))return;try{await api('/n
 async function saveVer(){try{await api('/version',{version:$('ver').value,url:$('url').value,notes:$('notes').value});alert('Saved ✓')}catch(e){alert(e.message)}}
 load();
 </script></body></html>`;
+// ---------------- Kyoto Blox now-playing relay (memory only) ----------------
+const BLOX_NP = new Map();   // robloxUserId -> { key, title, artist, playing, pos, dur, song, lines, seen }
+const BLOX_KEYS = new Map(); // robloxUserId -> the Kyoto Blox install that claimed it first (stops others overwriting it)
+setInterval(() => { for (const [k, v] of BLOX_NP) if (Date.now() - v.seen > 120000) BLOX_NP.delete(k); }, 60000).unref();
+routes['POST /blox/np'] = async (req, res, body) => {
+  const id = String(body.userId || ''); const key = String(body.key || '');
+  if (!/^\d{1,20}$/.test(id) || !/^[a-f0-9]{32}$/.test(key)) return fail(res, 400, 'bad request');
+  const owner = BLOX_KEYS.get(id);
+  if (owner && owner !== key) return send(res, 200, { ok: false, error: 'This Roblox account is linked to another Kyoto Blox' });
+  BLOX_KEYS.set(id, key);
+  const prev = BLOX_NP.get(id) || {};
+  const e = { key, title: cleanStr(body.title, 120), artist: cleanStr(body.artist, 120), playing: !!body.playing, pos: Math.max(0, Number(body.pos) || 0),
+    dur: Math.max(0, Number(body.dur) || 0), song: cleanStr(body.song, 16), seen: Date.now(), lines: prev.song === cleanStr(body.song, 16) ? prev.lines : [] };
+  if (Array.isArray(body.lines)) e.lines = body.lines.slice(0, 400).filter(l => Array.isArray(l)).map(l => [Math.max(0, Number(l[0]) || 0), hubBlocked(String(l[1] || '')) ? '***' : cleanStr(l[1], 140)]);
+  BLOX_NP.set(id, e);
+  send(res, 200, { ok: true, needLines: !!e.song && !e.lines.length });
+};
+
 // ---------------- staff panel (website: /mod) ----------------
 // Owners (OWNERS env var) are always staff. Owners can add moderators from the panel.
 // Moderators can: approve/reject capes, delete posts + chat, handle reports, mute, ban (not other staff), reset profiles.
@@ -824,7 +842,8 @@ function serveSite(req, res, pathname) {
 const server = http.createServer(async (req, res) => {
   try {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    if (limited(ip)) return fail(res, 429, 'slow down');
+    // Roblox game servers poll the lyrics relay for every player in them - they get their own, bigger budget
+    if (limited(req.url.startsWith('/blox/np') ? 'blox:' + ip : ip) && !(req.url.startsWith('/blox/np') && (hits.get('blox:' + ip) || {}).n <= 1500)) return fail(res, 429, 'slow down');
     // the website may be hosted somewhere else (Netlify, GitHub Pages...) - let it call the API
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Key');
@@ -875,13 +894,22 @@ const server = http.createServer(async (req, res) => {
       if (isOwner) badges.unshift('owner');
       return send(res, 200, Object.assign({ name: db.users[uuid].name, badges }, p));
     }
+    // Kyoto Blox -> your Roblox games: what someone is listening to + its synced lyrics (Kyoto Lyrics kit reads this)
+    const np = /^\/blox\/np\/(\d{1,20})$/.exec(url.pathname);
+    if (np && req.method === 'GET') {
+      const e = BLOX_NP.get(np[1]);
+      if (!e || Date.now() - e.seen > 20000) return send(res, 200, { playing: false });
+      const out = { playing: e.playing, title: e.title, artist: e.artist, song: e.song, pos: e.pos + (e.playing ? Date.now() - e.seen : 0), dur: e.dur };
+      if (q(req).get('have') !== e.song) out.lines = e.lines;
+      return send(res, 200, out);
+    }
     const key = `${req.method} ${url.pathname}`;
     const handler = routes[key];
     if (!handler) return fail(res, 404, 'not found');
     const limit = key === 'PUT /profile/media' ? 22000000 : 2500000;
     const body = (req.method === 'POST' || req.method === 'PUT') ? await readBody(req, limit) : {};
     const open = key === 'GET /' || key === 'GET /stats' || key.startsWith('POST /auth/') || key === 'POST /cosmetics/bulk'
-      || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version';
+      || key === 'POST /blox/np' || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version';
     let me = null;
     if (!open) { me = auth(req); if (!me) return fail(res, 401, 'not logged in'); }
     await handler(req, res, body, me);

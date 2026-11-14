@@ -56,47 +56,59 @@ setTheme(theme);
 $('#themePill').onclick = () => setTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length], true);
 
 /* ===================== starfield + shooting stars ===================== */
+// Stars are painted ONCE (no per-frame redraw, nothing moves on scroll or mouse).
+// Shooting stars use a second canvas that only animates while one is flying.
 (() => {
   const c = $('#stars'), g = c.getContext('2d');
-  let W, H, D = Math.min(2, devicePixelRatio || 1), stars = [], shoots = [], mx = 0, my = 0, sy = 0;
-  const resize = () => {
-    W = c.width = innerWidth * D; H = c.height = innerHeight * D;
-    stars = Array.from({ length: Math.round(innerWidth * innerHeight / 6500) }, () => ({ x: Math.random() * W, y: Math.random() * H, r: (Math.random() ** 2 * 1.4 + .35) * D, p: Math.random() * 7, s: .4 + Math.random() * 1.6, z: Math.random() }));
-  };
-  addEventListener('resize', resize); resize();
-  addEventListener('mousemove', e => { mx = e.clientX / innerWidth - .5; my = e.clientY / innerHeight - .5; });
-  addEventListener('scroll', () => { sy = scrollY; }, { passive: true });
-  const spawn = () => {
-    const fromRight = Math.random() < .5, ang = (18 + Math.random() * 24) * Math.PI / 180, sp = (9 + Math.random() * 9) * D;
-    shoots.push({ x: fromRight ? W * (.45 + Math.random() * .5) : W * Math.random() * .55, y: H * Math.random() * .45, vx: (fromRight ? -1 : 1) * Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 1, len: (140 + Math.random() * 160) * D });
-  };
-  let next = performance.now() + 1200;
-  (function frame(now) {
-    g.clearRect(0, 0, W, H);
-    for (const s of stars) {
-      const a = .25 + .75 * Math.abs(Math.sin(now / 1000 * s.s + s.p));
-      const x = (s.x - mx * 30 * s.z * D + W) % W, y = ((s.y - my * 20 * s.z * D - sy * .15 * s.z * D) % H + H) % H;
-      g.globalAlpha = a; g.fillStyle = '#fff'; g.beginPath(); g.arc(x, y, s.r, 0, 6.283); g.fill();
-      if (s.r > 1.4 * D) { g.globalAlpha = a * .18; g.beginPath(); g.arc(x, y, s.r * 4, 0, 6.283); g.fill(); }
+  const sc = document.createElement('canvas'); sc.id = 'shoot'; c.after(sc);
+  const h = sc.getContext('2d');
+  const D = Math.min(1.25, devicePixelRatio || 1);
+  let W = 0, H = 0, shoot = null, last = 0, hidden = document.hidden;
+  const paint = () => {
+    const w = innerWidth, hh = innerHeight;
+    if (Math.abs(w * D - W) < 2 && Math.abs(hh * D - H) < 160) return; // ignore mobile URL-bar jitter
+    W = c.width = sc.width = Math.round(w * D); H = c.height = sc.height = Math.round(hh * D);
+    g.clearRect(0, 0, W, H); g.fillStyle = '#fff';
+    const n = Math.min(240, Math.round(w * hh / 7000));
+    for (let i = 0; i < n; i++) {
+      g.globalAlpha = .25 + Math.random() * .75;
+      g.beginPath(); g.arc(Math.random() * W, Math.random() * H, (Math.random() ** 2 * 1.2 + .4) * D, 0, 6.283); g.fill();
     }
-    if (now > next) { spawn(); if (Math.random() < .2) setTimeout(spawn, 250); next = now + 2200 + Math.random() * 4200; }
-    for (const s of shoots) {
-      s.x += s.vx; s.y += s.vy; s.life -= .012;
-      const n = Math.hypot(s.vx, s.vy), tx = s.x - s.vx / n * s.len * Math.min(1, (1 - s.life) * 3), ty = s.y - s.vy / n * s.len * Math.min(1, (1 - s.life) * 3);
-      const grad = g.createLinearGradient(s.x, s.y, tx, ty);
-      grad.addColorStop(0, `rgba(255,255,255,${Math.max(0, s.life)})`); grad.addColorStop(1, 'rgba(255,255,255,0)');
-      g.globalAlpha = 1; g.strokeStyle = grad; g.lineWidth = 1.8 * D; g.lineCap = 'round'; g.beginPath(); g.moveTo(s.x, s.y); g.lineTo(tx, ty); g.stroke();
-      g.globalAlpha = Math.max(0, s.life) * .6; g.fillStyle = '#fff'; g.beginPath(); g.arc(s.x, s.y, 3 * D, 0, 6.283); g.fill();
-    }
-    shoots = shoots.filter(s => s.life > 0 && s.x > -400 && s.x < W + 400 && s.y < H + 200);
     g.globalAlpha = 1;
-    requestAnimationFrame(frame);
-  })(performance.now());
+  };
+  let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(paint, 200); }); paint();
+  document.addEventListener('visibilitychange', () => { hidden = document.hidden; });
+  function fly(now) {
+    const s = shoot; if (!s) return;
+    const dt = Math.min(3, (now - last) / 16.67); last = now;
+    s.t += dt; s.x += s.vx * dt; s.y += s.vy * dt;
+    h.clearRect(0, 0, W, H);
+    if (s.t >= s.life) { shoot = null; return; }
+    const k = s.t / s.life, a = Math.min(1, k * 6) * Math.max(0, 1 - k);
+    const n = Math.hypot(s.vx, s.vy), l = s.len * Math.min(1, k * 4);
+    const tx = s.x - s.vx / n * l, ty = s.y - s.vy / n * l;
+    const grad = h.createLinearGradient(s.x, s.y, tx, ty);
+    grad.addColorStop(0, `rgba(255,255,255,${a})`); grad.addColorStop(1, 'rgba(255,255,255,0)');
+    h.strokeStyle = grad; h.lineWidth = 1.6 * D; h.lineCap = 'round';
+    h.beginPath(); h.moveTo(s.x, s.y); h.lineTo(tx, ty); h.stroke();
+    requestAnimationFrame(fly);
+  }
+  (function schedule() {
+    setTimeout(() => {
+      if (!hidden && !shoot && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        const fromRight = Math.random() < .5, ang = (16 + Math.random() * 22) * Math.PI / 180, sp = (8 + Math.random() * 6) * D;
+        shoot = { x: fromRight ? W * (.5 + Math.random() * .45) : W * Math.random() * .5, y: H * Math.random() * .4,
+          vx: (fromRight ? -1 : 1) * Math.cos(ang) * sp, vy: Math.sin(ang) * sp, t: 0, life: 60 + Math.random() * 25, len: (130 + Math.random() * 120) * D };
+        last = performance.now(); requestAnimationFrame(fly);
+      }
+      schedule();
+    }, 3000 + Math.random() * 5000);
+  })();
 })();
 
 /* soft light following the cursor + nav background on scroll */
-addEventListener('mousemove', e => { $('#cursor').style.transform = `translate(${e.clientX}px, ${e.clientY}px)`; });
-addEventListener('scroll', () => { $('#nav').classList.toggle('scrolled', scrollY > 30); }, { passive: true });
+let navTick = false;
+addEventListener('scroll', () => { if (navTick) return; navTick = true; requestAnimationFrame(() => { $('#nav').classList.toggle('scrolled', scrollY > 30); navTick = false; }); }, { passive: true });
 
 /* ===================== router ===================== */
 function route() {
@@ -154,8 +166,11 @@ setInterval(() => { const v = $('#mnVideo'); if (!v || !v.duration) return; $('.
   const set = x => { const r = box.getBoundingClientRect(); const p = Math.max(0, Math.min(100, (x - r.left) / r.width * 100)); box.querySelector('.after').style.clipPath = `inset(0 0 0 ${p}%)`; box.querySelector('.handle').style.left = p + '%'; };
   box.onpointerdown = e => { drag = true; box.setPointerCapture(e.pointerId); set(e.clientX); };
   box.onpointermove = e => { if (drag) set(e.clientX); }; box.onpointerup = () => { drag = false; };
-  let auto = true; box.addEventListener('pointerdown', () => { auto = false; });
-  const t0 = performance.now(); (function sweep(now) { if (!auto) return; const r = box.getBoundingClientRect(); if (r.top < innerHeight && r.bottom > 0) set(r.left + r.width * (.5 + .32 * Math.sin((now - t0) / 1600))); requestAnimationFrame(sweep); })(t0);
+  // gentle auto-sweep while it's on screen, until you grab it
+  let auto = true, visible = false, t0 = 0;
+  box.addEventListener('pointerdown', () => { auto = false; });
+  new IntersectionObserver(([e]) => { visible = e.isIntersecting; if (visible && auto) { t0 = performance.now(); requestAnimationFrame(sweep); } }).observe(box);
+  function sweep(now) { if (!auto || !visible) return; const r = box.getBoundingClientRect(); set(r.left + r.width * (.5 + .3 * Math.sin((now - t0) / 1800 + 1.57))); requestAnimationFrame(sweep); }
   $$('[data-sky]').forEach(b => b.onclick = () => { $$('[data-sky]').forEach(x => x.classList.toggle('on', x === b)); $('#skyAfter').src = `/media/sky-${b.dataset.sky}.webp`; });
 })();
 
@@ -164,12 +179,9 @@ const CAPES = [['Starry', 'linear-gradient(170deg,#1b1f3a,#07070c 70%)'], ['Saku
   ['Frost', 'linear-gradient(170deg,#e6f3ff,#3a5a8a)'], ['Midnight', 'linear-gradient(170deg,#6a4cff,#120a2a)']];
 $('#capeRow').innerHTML = CAPES.map(([n, bg]) => `<div class="cape-wrap"><div class="cape" style="background:${bg}"></div>${esc(n)}</div>`).join('');
 
-// parallax band + tilt windows
-addEventListener('scroll', () => { const b = $('.band-img'); if (!b) return; const r = b.parentElement.getBoundingClientRect(); b.style.transform = `translateY(${r.top * -.18}px)`; }, { passive: true });
-$$('.tilt').forEach(el => {
-  el.addEventListener('mousemove', e => { const r = el.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5; el.style.transform = `perspective(1000px) rotateY(${x * 10}deg) rotateX(${-y * 8}deg)`; });
-  el.addEventListener('mouseleave', () => { el.style.transform = ''; });
-});
+// videos only play while on screen (saves a lot of CPU/GPU)
+const vio = new IntersectionObserver(es => es.forEach(e => { const v = e.target; if (e.isIntersecting) v.play().catch(() => {}); else v.pause(); }), { threshold: .05 });
+$$('#page-home video').forEach(v => { v.preload = 'metadata'; v.removeAttribute('autoplay'); vio.observe(v); });
 
 const FAQ = [['Is Kyoto free?', 'Yes. No account to buy, no subscription, no ads. Capes and particles are free too.'],
   ['Will I get banned?', 'Kyoto is built to be legit: no aim help, no autoclick, no x-ray. Combat features only show information. As with any mod, check each server\'s rules.'],
@@ -444,4 +456,4 @@ $$('.up').forEach(card => {
 });
 
 /* ===================== start ===================== */
-route(); observe(); new MutationObserver(observe).observe(document.body, { childList: true, subtree: true });
+route(); observe();

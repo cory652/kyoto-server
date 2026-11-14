@@ -107,7 +107,7 @@ const routes = {
     const prof = await r.json();
     const uuid = dashed(prof.id);
     db.users[uuid] = { name: prof.name, joined: (db.users[uuid] && db.users[uuid].joined) || Date.now() };
-    for (const [t, v] of Object.entries(db.tokens)) if (v.uuid === uuid) delete db.tokens[t];
+    for (const [t, v] of Object.entries(db.tokens)) if (v.uuid === uuid && !v.web) delete db.tokens[t];
     const token = crypto.randomBytes(32).toString('hex');
     db.tokens[token] = { uuid, created: Date.now() };
     save();
@@ -223,27 +223,58 @@ const routes = {
 };
 
 // ---------------- profiles ----------------
-const MEDIA_TYPES = { mp4: 'video/mp4', gif: 'image/gif', mp3: 'audio/mpeg', wav: 'audio/wav' };
+const MEDIA_TYPES = { mp4: 'video/mp4', webm: 'video/webm', gif: 'image/gif', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg' };
+const MEDIA_KINDS = { // kind -> allowed extensions, max bytes
+  video: [['mp4', 'gif', 'webm'], 15000000], audio: [['mp3', 'wav', 'ogg'], 10000000],
+  avatar: [['png', 'jpg', 'jpeg', 'gif'], 3000000], image: [['png', 'jpg', 'jpeg'], 6000000] };
 function cleanStr(v, max) { return String(v || '').replace(/[\u0000-\u001f]/g, '').slice(0, max); }
 function mediaFile(uuid, kind) { return path.join(MEDIA, `${uuid.replace(/[^a-f0-9-]/g, '')}_${kind}`); }
+const int = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, Math.round(n))) : d; };
+const hex = (v, d) => /^#[0-9a-f]{6}$/i.test(String(v || '')) ? String(v).toLowerCase() : d;
+function hubBlocked(t) { return blocked(t); }
+function linkSafe(l) {
+  const u = String(l).toLowerCase();
+  if (u.includes('.onion') || /^(https?:\/\/)?\d{1,3}(\.\d{1,3}){3}/.test(u)) return false;
+  if (['bit.ly', 'tinyurl', 't.co/', 'cutt.ly', 'is.gd', 'rb.gy', 'shorturl', 'grabify', 'iplogger', '2no.co'].some(x => u.includes(x))) return false;
+  return !blocked(u);
+}
+const LINK_RX = /^(https?:\/\/)?[\w.-]+\.[a-z]{2,}(\/\S*)?$/i;
 
+// Profile text + look. Fields that aren't sent keep their old value, so the mod and the website can both edit.
 routes['PUT /profile'] = async (req, res, body, me) => {
+  if (isBanned(me)) return fail(res, 403, 'Banned');
   const old = db.profiles[me] || {};
-  db.profiles[me] = Object.assign(old, {
-    displayName: cleanStr(body.displayName, 24),
-    bio: cleanStr(body.bio, 160),
-    tags: (Array.isArray(body.tags) ? body.tags : []).slice(0, 5).map(t => cleanStr(t, 16)).filter(Boolean),
-    links: (Array.isArray(body.links) ? body.links : []).slice(0, 4).map(l => cleanStr(l, 120)).filter(l => /^(https?:\/\/)?[\w.-]+\.[a-z]{2,}(\/\S*)?$/i.test(l)),
-    hue: Math.max(0, Math.min(360, Number(body.hue) || 0)),
-    nameEffect: Math.max(0, Math.min(4, body.nameEffect | 0)),
-    bgEffect: Math.max(0, Math.min(5, body.bgEffect | 0)),
-    views: old.views || 0,
-  });
+  const p = Object.assign({}, old);
+  const has = k => Object.prototype.hasOwnProperty.call(body, k);
+  const textOk = t => !hubBlocked(t);
+  if (has('displayName')) { const v = cleanStr(body.displayName, 24); if (!textOk(v)) return fail(res, 400, 'That name isn\'t allowed'); p.displayName = v; }
+  if (has('bio')) { const v = cleanStr(body.bio, 300); if (!textOk(v)) return fail(res, 400, 'Your bio has a word that isn\'t allowed'); p.bio = v; }
+  if (has('location')) { const v = cleanStr(body.location, 40); if (!textOk(v)) return fail(res, 400, 'That location isn\'t allowed'); p.location = v; }
+  if (has('tags')) p.tags = (Array.isArray(body.tags) ? body.tags : []).slice(0, 8).map(t => cleanStr(t, 18)).filter(t => t && textOk(t));
+  if (has('links')) p.links = (Array.isArray(body.links) ? body.links : []).slice(0, 8).map(l => cleanStr(l, 160)).filter(l => LINK_RX.test(l) && linkSafe(l));
+  if (has('hue')) p.hue = int(body.hue, 0, 360, 262);
+  if (has('nameEffect')) p.nameEffect = int(body.nameEffect, 0, 4, 1);
+  if (has('bgEffect')) p.bgEffect = int(body.bgEffect, 0, 6, 1);
+  if (has('accent')) p.accent = hex(body.accent, null);
+  if (has('textColor')) p.textColor = hex(body.textColor, '#ffffff');
+  if (has('layout')) p.layout = int(body.layout, 0, 2, 0);
+  if (has('cardStyle')) p.cardStyle = int(body.cardStyle, 0, 3, 0);
+  if (has('cardOpacity')) p.cardOpacity = int(body.cardOpacity, 0, 100, 62);
+  if (has('bgDim')) p.bgDim = int(body.bgDim, 0, 90, 45);
+  if (has('font')) p.font = ['poppins', 'inter', 'mono', 'serif', 'pixel'].includes(body.font) ? body.font : 'poppins';
+  if (has('showViews')) p.showViews = !!body.showViews;
+  if (has('avatarGlow')) p.avatarGlow = !!body.avatarGlow;
+  if (has('cursorTrail')) p.cursorTrail = !!body.cursorTrail;
+  if (has('typewriterBio')) p.typewriterBio = !!body.typewriterBio;
+  p.views = old.views || 0;
+  p.updated = Date.now();
+  db.profiles[me] = p;
   save(); send(res, 200, { ok: true });
 };
 routes['PUT /profile/media'] = async (req, res, body, me) => {
-  const kind = body.kind === 'video' ? 'video' : body.kind === 'audio' ? 'audio' : null;
-  if (!kind) return fail(res, 400, 'kind must be video or audio');
+  const kind = Object.prototype.hasOwnProperty.call(MEDIA_KINDS, body.kind) ? body.kind : null;
+  if (!kind) return fail(res, 400, 'kind must be video, audio, avatar or image');
+  if (isBanned(me)) return fail(res, 403, 'Banned');
   const p = db.profiles[me] || (db.profiles[me] = { views: 0 });
   const file = mediaFile(me, kind);
   if (body.remove) {
@@ -251,15 +282,82 @@ routes['PUT /profile/media'] = async (req, res, body, me) => {
     p[kind + 'Ext'] = null; save(); return send(res, 200, { ok: true });
   }
   const ext = String(body.ext || '').toLowerCase();
-  const allowed = kind === 'video' ? ['mp4', 'gif'] : ['mp3', 'wav'];
-  if (!allowed.includes(ext)) return fail(res, 400, `${kind} must be ${allowed.join(' or ')}`);
+  const [allowed, max] = MEDIA_KINDS[kind];
+  if (!allowed.includes(ext)) return fail(res, 400, `${kind} must be ${allowed.join(', ')}`);
   const buf = Buffer.from(String(body.data || ''), 'base64');
-  const max = kind === 'video' ? 15000000 : 10000000;
   if (!buf.length || buf.length > max) return fail(res, 400, `File too big (max ${max / 1000000} MB)`);
   fs.writeFileSync(file, buf);
-  p[kind + 'Ext'] = ext;
+  p[kind + 'Ext'] = ext === 'jpeg' ? 'jpg' : ext;
   if (kind === 'audio') p.audioName = cleanStr(body.fileName, 60);
+  if (kind === 'video' && p.imageExt) { try { fs.unlinkSync(mediaFile(me, 'image')); } catch (e) { /* none */ } p.imageExt = null; }
+  if (kind === 'image' && p.videoExt) { try { fs.unlinkSync(mediaFile(me, 'video')); } catch (e) { /* none */ } p.videoExt = null; }
+  p.updated = Date.now();
   save(); send(res, 200, { ok: true });
+};
+
+// ---------------- website login: one-time code from the game (/kyoto link) ----------------
+const linkCodes = new Map(); // code -> { uuid, exp }
+routes['POST /link/code'] = async (req, res, body, me) => {
+  for (const [c, v] of linkCodes) if (v.uuid === me || v.exp < Date.now()) linkCodes.delete(c);
+  let code; do { code = String(crypto.randomInt(100000, 1000000)); } while (linkCodes.has(code));
+  linkCodes.set(code, { uuid: me, exp: Date.now() + 10 * 60000, tries: 0 });
+  send(res, 200, { code, expiresIn: 600 });
+};
+const webFails = new Map();
+routes['POST /web/login'] = async (req, res, body) => {
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  const f = webFails.get(ip) || { n: 0, at: 0 };
+  if (f.n >= 10 && Date.now() - f.at < 10 * 60000) return fail(res, 429, 'Too many wrong codes, wait 10 minutes');
+  const code = String(body.code || '').replace(/\D/g, '');
+  const name = String(body.name || '').trim().toLowerCase();
+  const v = linkCodes.get(code);
+  const uuid = v && v.exp > Date.now() ? v.uuid : null;
+  if (!uuid || (name && db.users[uuid].name.toLowerCase() !== name)) {
+    webFails.set(ip, { n: f.n + 1, at: Date.now() });
+    return fail(res, 401, 'That code is wrong or expired. Type /kyoto link in Minecraft for a new one.');
+  }
+  linkCodes.delete(code); webFails.delete(ip);
+  for (const [t, tv] of Object.entries(db.tokens)) if (tv.uuid === uuid && tv.web && Date.now() - tv.created > 30 * 86400000) delete db.tokens[t];
+  const token = crypto.randomBytes(32).toString('hex');
+  db.tokens[token] = { uuid, created: Date.now(), web: true };
+  save();
+  send(res, 200, { token, uuid, name: db.users[uuid].name });
+};
+routes['POST /web/logout'] = async (req, res, body, me) => {
+  const m = /^Bearer (.+)$/.exec(req.headers.authorization || '');
+  if (m && db.tokens[m[1]] && db.tokens[m[1]].web) delete db.tokens[m[1]];
+  save(); send(res, 200, { ok: true });
+};
+routes['GET /me'] = async (req, res, body, me) => {
+  const u = db.users[me] || {};
+  send(res, 200, { uuid: me, name: u.name, owner: OWNERS.includes(String(u.name || '').toLowerCase()), profile: db.profiles[me] || {} });
+};
+
+// ---------------- Kyoto jars for the launcher (put files in ./jars as kyoto-<mc version>.jar) ----------------
+const JARS = path.join(__dirname, 'jars');
+// Jars too big for GitHub's web upload (25 MB) go in a GitHub Release instead; list their links in jars/links.json:
+//   { "26.3": { "url": "https://github.com/you/kyoto-server/releases/download/v6.3.0/kyoto-26.3.jar", "version": "6.3.0" } }
+function jarLinks() {
+  try { return JSON.parse(fs.readFileSync(path.join(JARS, 'links.json'), 'utf8')); } catch (e) { return {}; }
+}
+function jarList() {
+  let local = [];
+  try { local = fs.readdirSync(JARS).map(f => /^kyoto-(.+)\.jar$/.exec(f)).filter(Boolean).map(m => m[1]); } catch (e) { /* none */ }
+  return [...new Set([...Object.keys(jarLinks()), ...local])];
+}
+const jarHash = new Map(); // file -> { mtime, sha1, size }
+routes['GET /mods/list'] = async (req, res) => {
+  const files = {}, links = jarLinks();
+  for (const v of jarList()) {
+    const l = links[v];
+    if (l && /^https:\/\//.test(l.url || '') && !/YOUR_GITHUB_NAME/.test(l.url)) { files[v] = { url: l.url, version: String(l.version || l.url) }; continue; }
+    const f = path.join(JARS, `kyoto-${v}.jar`); if (!fs.existsSync(f)) continue;
+    const st = fs.statSync(f);
+    let h = jarHash.get(f);
+    if (!h || h.mtime !== st.mtimeMs) { h = { mtime: st.mtimeMs, sha1: crypto.createHash('sha1').update(fs.readFileSync(f)).digest('hex'), size: st.size }; jarHash.set(f, h); }
+    files[v] = { sha1: h.sha1, size: h.size };
+  }
+  send(res, 200, { versions: Object.keys(files), files, release: db.release });
 };
 
 // ---------------- Kyoto Hub: posts, setting presets, capes, public chat, DMs ----------------
@@ -436,7 +534,7 @@ routes['GET /dm/img'] = async (req, res, body, me) => {
 
 // ---------------- shared video screens (per server address) ----------------
 if (!db.screens) db.screens = {};
-const YT = /^https:\/\/(www\.|m\.|music\.)?(youtube\.com|youtu\.be)\//i;
+const YT = /^https:\/\/(www\.|m\.|music\.|clips\.|player\.)?(youtube\.com|youtu\.be|twitch\.tv|kick\.com|vimeo\.com|dailymotion\.com|dai\.ly|streamable\.com)\//i;
 function screenOut(s) { return Object.assign({}, s, { owner: nameOf(s.ownerUuid) }); }
 routes['GET /screens'] = async (req, res, body, me) => {
   const key = String(q(req).get('server') || '').toLowerCase().slice(0, 80);
@@ -446,7 +544,7 @@ routes['POST /screens/save'] = async (req, res, body, me) => {
   const key = String(body.server || '').toLowerCase().slice(0, 80); if (!key) return fail(res, 400, 'No server');
   if (isBanned(me)) return fail(res, 403, 'Banned');
   const url = String(body.url || '').slice(0, 300);
-  if (url && !YT.test(url)) return fail(res, 400, 'Only YouTube links can go on screens');
+  if (url && !YT.test(url)) return fail(res, 400, 'Only YouTube, Twitch, Kick, Vimeo, Dailymotion or Streamable links can go on screens');
   const num = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d; };
   const arr = db.screens[key] || (db.screens[key] = []);
   let s = body.id ? arr.find(x => x.id === body.id) : null;
@@ -574,11 +672,54 @@ routes['POST /mod/unban'] = async (req, res, body, me) => {
 };
 routes['POST /mod/clearreports'] = async (req, res, body, me) => { if (!ownerOnly(res, me)) return; H.reports = []; save(); send(res, 200, { ok: true }); };
 
+// ---------------- website (static files in ./site) ----------------
+const SITE = path.join(__dirname, 'site');
+const SITE_TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.png': 'image/png',
+  '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.mp4': 'video/mp4', '.webm': 'video/webm', '.woff2': 'font/woff2', '.ico': 'image/x-icon', '.json': 'application/json' };
+function serveSite(req, res, pathname) {
+  // pretty URLs: /edit, /u/<name>, /download, /features -> the single page app
+  let rel = decodeURIComponent(pathname);
+  if (rel === '/' || /^\/(edit|u\/[A-Za-z0-9_]{1,16}|download|features|profile)\/?$/.test(rel)) rel = '/index.html';
+  const file = path.normalize(path.join(SITE, rel));
+  if (!file.startsWith(SITE) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return false;
+  const ext = path.extname(file).toLowerCase();
+  const stat = fs.statSync(file);
+  const headers = { 'Content-Type': SITE_TYPES[ext] || 'application/octet-stream', 'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=86400' };
+  // videos need range requests so browsers can seek/stream them
+  const range = /bytes=(\d*)-(\d*)/.exec(req.headers.range || '');
+  if (range && (ext === '.mp4' || ext === '.webm')) {
+    const start = range[1] ? Number(range[1]) : 0, end = range[2] ? Math.min(Number(range[2]), stat.size - 1) : stat.size - 1;
+    res.writeHead(206, Object.assign(headers, { 'Content-Range': `bytes ${start}-${end}/${stat.size}`, 'Accept-Ranges': 'bytes', 'Content-Length': end - start + 1 }));
+    fs.createReadStream(file, { start, end }).pipe(res); return true;
+  }
+  res.writeHead(200, Object.assign(headers, { 'Content-Length': stat.size, 'Accept-Ranges': 'bytes' }));
+  fs.createReadStream(file).pipe(res); return true;
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     if (limited(ip)) return fail(res, 429, 'slow down');
+    // the website may be hosted somewhere else (Netlify, GitHub Pages...) - let it call the API
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Key');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
+    if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
     const url = new URL(req.url, 'http://x');
+    // browsers get the website, the mod/launcher (no text/html Accept) keep getting JSON
+    if (req.method === 'GET' && (String(req.headers.accept || '').includes('text/html') || /^\/(assets|img|media|fonts)\//.test(url.pathname) || /\.(css|js|png|jpg|webp|svg|mp4|webm|woff2|ico)$/.test(url.pathname))) {
+      if (url.pathname !== '/admin' && serveSite(req, res, url.pathname)) return;
+    }
+    const jar = /^\/mods\/kyoto-([0-9][0-9a-z.\-]{0,20})\.jar$/i.exec(url.pathname);
+    if (req.method === 'GET' && jar) {
+      const link = jarLinks()[jar[1]];
+      if (link && /^https:\/\//.test(link.url || '') && !/YOUR_GITHUB_NAME/.test(link.url)) { res.writeHead(302, { Location: link.url }); return res.end(); }
+      const f = path.join(JARS, `kyoto-${jar[1]}.jar`);
+      if (!fs.existsSync(f)) return fail(res, 404, 'No Kyoto build for that Minecraft version yet');
+      const st = fs.statSync(f);
+      res.writeHead(200, { 'Content-Type': 'application/java-archive', 'Content-Length': st.size, 'Content-Disposition': `attachment; filename="kyoto-${jar[1]}.jar"` });
+      return fs.createReadStream(f).pipe(res);
+    }
     const capeMatch = /^\/cape\/([a-f0-9-]{36})$/.exec(url.pathname);
     if (req.method === 'GET' && capeMatch) {
       const file = path.join(CAPES, capeMatch[1]);
@@ -592,7 +733,7 @@ const server = http.createServer(async (req, res) => {
       if (!fs.existsSync(file)) return fail(res, 404, 'no skin');
       return send(res, 200, fs.readFileSync(file), 'image/png');
     }
-    const prof = /^\/profile\/([A-Za-z0-9_]{1,16})(?:\/(video|audio))?$/.exec(url.pathname);
+    const prof = /^\/profile\/([A-Za-z0-9_]{1,16})(?:\/(video|audio|avatar|image))?$/.exec(url.pathname);
     if (req.method === 'GET' && prof) {
       const uuid = byName(prof[1]);
       const isOwner = OWNERS.includes(prof[1].toLowerCase());
@@ -604,7 +745,7 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, fs.readFileSync(file), MEDIA_TYPES[p[prof[2] + 'Ext']] || 'application/octet-stream');
       }
       if (!uuid || !p) return fail(res, 404, 'no profile');
-      p.views = (p.views || 0) + 1; save();
+      if (!q(req).get('noview')) { p.views = (p.views || 0) + 1; save(); }
       const badges = ['kyoto'];
       if (isOwner) badges.unshift('owner');
       return send(res, 200, Object.assign({ name: db.users[uuid].name, badges }, p));
@@ -615,7 +756,7 @@ const server = http.createServer(async (req, res) => {
     const limit = key === 'PUT /profile/media' ? 22000000 : 2500000;
     const body = (req.method === 'POST' || req.method === 'PUT') ? await readBody(req, limit) : {};
     const open = key === 'GET /' || key === 'GET /stats' || key.startsWith('POST /auth/') || key === 'POST /cosmetics/bulk'
-      || key === 'GET /news' || key === 'GET /version' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version';
+      || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version';
     let me = null;
     if (!open) { me = auth(req); if (!me) return fail(res, 401, 'not logged in'); }
     await handler(req, res, body, me);

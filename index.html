@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kyoto Client · The best client is just a mod</title>
+<meta name="description" content="Kyoto Client: a free Minecraft client that's just a Fabric mod. Video screens, custom skies, synced lyrics, capes, friends and profiles.">
+<meta property="og:title" content="Kyoto Client">
+<meta property="og:description" content="The best client is just a mod.">
+<link rel="icon" href="/img/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Playfair+Display:wght@600;800&family=Silkscreen&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+<div id="sky"><div id="art"></div><canvas id="stars"></canvas><div class="vignette"></div><div class="grain"></div></div>
+<div id="cursor"></div>
+
+<!-- ======================= NAV ======================= -->
+<header id="nav">
+  <a class="brand" href="/" data-link><img class="logo-k" src="/img/logos/logo_k_starry.png" alt=""><span>KYOTO</span><em>CLIENT</em></a>
+  <nav class="links">
+    <a href="/#features" data-link>Features</a><a href="/#screens" data-link>Screens</a><a href="/#sky-time" data-link>Sky</a>
+    <a href="/#hub" data-link>Hub</a><a href="/#profiles" data-link>Profiles</a><a href="/#download" data-link>Download</a>
+  </nav>
+  <div class="nav-right">
+    <span class="online" id="navOnline"><i></i><b>—</b> online</span>
+    <a class="btn ghost sm" href="/edit" data-link id="navEdit">Edit profile</a>
+    <a class="btn sm" href="/#download" data-link>Download</a>
+  </div>
+</header>
+
+<!-- ======================= LANDING ======================= -->
+<main id="page-home" class="page">
+  <section class="hero">
+    <div class="hero-badge reveal"><span class="pulse"></span>Minecraft <b id="heroMc">26.3</b> · Fabric · Free forever</div>
+    <img class="hero-logo logo-k reveal" src="/img/logos/logo_k_starry.png" alt="Kyoto">
+    <h1 class="hero-title"><span class="word w1">KYOTO</span><span class="word w2">CLIENT</span></h1>
+    <p class="hero-sub reveal">The best client is just a mod. Watch videos on screens in your world, paint your own sky, sing along to lyrics that float in front of you, and hang out with every Kyoto player.</p>
+    <div class="hero-cta reveal">
+      <a class="btn big glow" href="#download" data-scroll>__I_download__ Get Kyoto</a>
+      <a class="btn big ghost" href="#features" data-scroll>See what's inside __I_arrow__</a>
+    </div>
+    <div class="stats reveal">
+      <div><b data-count="online">0</b><span>playing now</span></div>
+      <div><b data-count="users">0</b><span>Kyoto players</span></div>
+      <div><b>100+</b><span>modules</span></div>
+      <div><b>0</b><span>ads, ever</span></div>
+    </div>
+    <a class="scroll-hint" href="#features" data-scroll>__I_mouse__</a>
+  </section>
+
+  <div class="marquee"><div class="track" id="marquee"></div></div>
+
+  <section id="features" class="section">
+    <div class="sec-head reveal"><span class="eyebrow">Everything included</span><h2>One mod. Everything you'd install ten mods for.</h2>
+      <p>Press <kbd>Right Shift</kbd> in game. Every feature is a switch, with settings behind it.</p></div>
+    <div class="grid feat" id="featGrid"></div>
+  </section>
+
+  <section id="screens" class="section split">
+    <div class="split-text reveal">
+      <span class="eyebrow">Video screens</span>
+      <h2>Movie night, in the middle of your world.</h2>
+      <p>Put a screen on any wall and press play. Everyone with Kyoto on the server watches in sync, hears it from where they stand, and it fades when you walk away. Rather keep it private? Pop it into a mini player on your own screen.</p>
+      <div class="sources" id="sources"></div>
+      <div class="mn-tabs" id="mnTabs"></div>
+    </div>
+    <div class="screen-stage reveal">
+      <div class="screen3d" id="screen3d">
+        <div class="bezel"><video id="mnVideo" src="/media/movienight-1.mp4" autoplay muted loop playsinline></video>
+          <div class="vbar"><span class="vplay">__I_pause__</span><div class="vprog"><i></i></div><span class="vtime">0:00</span></div></div>
+        <div class="viewers"><span><img src="https://mc-heads.net/avatar/heffm/32" alt="">heffm</span><span><i>K</i>kai</span><span><i>L</i>lumi</span></div>
+      </div>
+      <div class="glow-floor"></div>
+    </div>
+  </section>
+
+  <section id="sky-time" class="section">
+    <div class="sec-head reveal"><span class="eyebrow">Custom sky + time</span><h2>Paint your own sky.</h2>
+      <p>Galaxy nights, auroras, shooting stars, golden hour and colours that match your Kyoto theme. Pick your own time of day too. Only you see it, nothing changes for the server.</p></div>
+    <div class="compare reveal" id="compare">
+      <img src="/media/sky-vanilla.webp" alt="Vanilla sky">
+      <div class="after"><img id="skyAfter" src="/media/sky-night.webp" alt="Kyoto sky"></div>
+      <div class="handle"><span>__I_arrow__</span></div>
+      <div class="tag l">Vanilla</div><div class="tag r">Kyoto</div>
+    </div>
+    <div class="sky-pick reveal" id="skyPick">
+      <button class="on" data-sky="night">__I_moon__ Galaxy night</button><button data-sky="dusk">__I_sun__ Golden hour</button>
+    </div>
+  </section>
+
+  <section id="hub" class="section split rev">
+    <div class="split-text reveal">
+      <span class="eyebrow">Kyoto Hub</span>
+      <h2>Every Kyoto player, one chat away.</h2>
+      <p>A public chat, DMs, friends, shared setups and capes, right inside the game. Words and unsafe links are filtered, so it stays a place you actually want to hang out.</p>
+      <ul class="ticks"><li>__I_chat__ Public chat with player heads</li><li>__I_users__ Friends, DMs and voice calls</li><li>__I_layers__ Share and apply whole setups</li><li>__I_shield__ Filtered and moderated</li></ul>
+    </div>
+    <div class="window reveal tilt"><div class="wbar"><i></i><i></i><i></i><span>Kyoto Hub</span></div><img src="/media/hub.webp" alt="Kyoto Hub in game"></div>
+  </section>
+
+  <section id="world" class="parallax-band">
+    <div class="band-img" style="background-image:url(/media/base.webp)"></div>
+    <div class="band-text reveal"><span class="eyebrow">Your worlds</span><h2>Built for how you play.</h2>
+      <p>Smooth zoom, a HUD you drag anywhere, waypoints, more FPS. On every world and every server.</p></div>
+  </section>
+
+  <section id="capes" class="section">
+    <div class="sec-head reveal"><span class="eyebrow">Capes</span><h2>Capes, animated or not. All free.</h2>
+      <p>Drop in a PNG or an animated GIF and every Kyoto player sees it. No store, no paywall.</p></div>
+    <div class="capes reveal" id="capeRow"></div>
+  </section>
+
+  <section id="profiles" class="section split">
+    <div class="split-text reveal">
+      <span class="eyebrow">Profiles</span>
+      <h2>A profile page that's actually yours.</h2>
+      <p>Background videos, music, name effects, your links and badges, made here on the website and shown in game when someone opens your profile. Log in with a code from the game, no password needed.</p>
+      <a class="btn big glow" href="/edit" data-link>__I_palette__ Make your profile</a>
+    </div>
+    <div class="phone reveal tilt"><div class="pf-mini" id="pfMini"></div></div>
+  </section>
+
+  <section id="download" class="section">
+    <div class="sec-head reveal"><span class="eyebrow">Download</span><h2>Up and running in a minute.</h2></div>
+    <div class="dl-grid">
+      <div class="dl-card main reveal">
+        <img src="/media/launcher.webp" alt="Kyoto Launcher">
+        <div class="dl-body"><h3>__I_rocket__ Kyoto Launcher</h3><p>Pick your Minecraft version and press Play. It installs Fabric, Fabric API and the right Kyoto build for you, and keeps them updated.</p>
+          <a class="btn big glow" id="dlLauncher" href="#">__I_download__ Download for Windows</a></div>
+      </div>
+      <div class="dl-card reveal">
+        <div class="dl-body"><h3>__I_layers__ Just the mod</h3><p>Already use Fabric? Drop the jar into your mods folder next to Fabric API.</p>
+          <div id="jarList" class="jars"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq" class="section narrow">
+    <div class="sec-head reveal"><span class="eyebrow">FAQ</span><h2>Questions</h2></div>
+    <div class="faq" id="faqList"></div>
+  </section>
+
+  <footer class="foot"><div><img class="logo-k" src="/img/logos/logo_k_starry.png" alt=""><b>Kyoto Client</b><span>Made by heffm</span></div>
+    <div class="foot-links"><a href="/edit" data-link>Profile editor</a><a href="#download" data-scroll>Download</a><a id="footDiscord" href="#" target="_blank" rel="noopener">Discord</a></div>
+    <button class="theme-pill" id="themePill"></button></footer>
+</main>
+
+<!-- ======================= PROFILE EDITOR ======================= -->
+<main id="page-edit" class="page" hidden>
+  <div class="login-wrap" id="loginWrap">
+    <div class="login-card">
+      <img class="logo-k" src="/img/logos/logo_k_starry.png" alt="">
+      <h2>Log in with Minecraft</h2>
+      <p>In Minecraft (with Kyoto), type <code>/kyoto link</code> or open your profile and press <b>Edit on website</b>. Type the 6-digit code here.</p>
+      <label>Minecraft name<input id="lgName" autocomplete="username" placeholder="heffm" maxlength="16"></label>
+      <div class="otp" id="otp">
+        <input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1">
+      </div>
+      <button class="btn big glow wide" id="lgBtn">Log in</button>
+      <p class="muted small" id="lgMsg">Codes work once and last 10 minutes. Kyoto never sees your password.</p>
+    </div>
+  </div>
+
+  <div class="dash" id="dash" hidden>
+    <aside class="side">
+      <div class="me"><img id="meHead" alt=""><div><b id="meName">—</b><span id="meSub">Kyoto profile</span></div></div>
+      <nav id="sideNav">
+        <button data-tab="profile" class="on">__I_user__ Profile</button>
+        <button data-tab="appearance">__I_palette__ Appearance</button>
+        <button data-tab="links">__I_link__ Links</button>
+        <button data-tab="media">__I_image__ Media</button>
+        <button data-tab="effects">__I_wand__ Effects</button>
+      </nav>
+      <div class="side-foot">
+        <a class="btn ghost wide" id="viewProfile" target="_blank">__I_external__ View profile</a>
+        <button class="btn ghost wide" id="logoutBtn">__I_logout__ Log out</button>
+      </div>
+    </aside>
+
+    <section class="panel">
+      <div class="tab on" data-tab="profile">
+        <h2>Profile</h2><p class="muted">What people see first.</p>
+        <div class="card"><label>Display name<input id="f_displayName" maxlength="24" placeholder="hef"></label>
+          <label>Bio<textarea id="f_bio" maxlength="300" rows="3" placeholder="hef the man"></textarea><span class="count" data-for="f_bio"></span></label>
+          <label>Location<input id="f_location" maxlength="40" placeholder="Hef Town"></label>
+          <label>Tags <span class="muted">(press Enter)</span><div class="tags" id="tagBox"><input id="tagInput" maxlength="18" placeholder="Add a tag"></div></label></div>
+      </div>
+
+      <div class="tab" data-tab="appearance">
+        <h2>Appearance</h2><p class="muted">Layout, card and colours.</p>
+        <div class="card"><h4>__I_layout__ Layout</h4><div class="choices" id="c_layout"></div></div>
+        <div class="card"><h4>__I_layers__ Profile card</h4><div class="choices" id="c_cardStyle"></div>
+          <div class="row2"><label>Card opacity <output id="o_cardOpacity"></output><input type="range" id="f_cardOpacity" min="0" max="100"></label>
+          <label>Background darkness <output id="o_bgDim"></output><input type="range" id="f_bgDim" min="0" max="90"></label></div></div>
+        <div class="card"><h4>__I_palette__ Colours</h4><div class="row3">
+          <label>Accent<span class="color"><input type="color" id="f_accent"><code id="cv_accent"></code></span></label>
+          <label>Text<span class="color"><input type="color" id="f_textColor"><code id="cv_textColor"></code></span></label>
+          <label>Font<select id="f_font"><option value="poppins">Poppins</option><option value="inter">Inter</option><option value="mono">Mono</option><option value="serif">Serif</option><option value="pixel">Pixel</option></select></label></div>
+          <div class="swatches" id="swatches"></div></div>
+        <div class="card"><h4>__I_settings__ Extras</h4>
+          <label class="sw"><input type="checkbox" id="f_avatarGlow"><i></i>Glow around your avatar</label>
+          <label class="sw"><input type="checkbox" id="f_showViews"><i></i>Show view count</label></div>
+      </div>
+
+      <div class="tab" data-tab="links">
+        <h2>Links</h2><p class="muted">Up to 8. Icons are picked for you.</p>
+        <div class="card"><div id="linkList"></div>
+          <div class="addrow"><input id="linkInput" placeholder="youtube.com/@you"><button class="btn" id="linkAdd">__I_plus__ Add</button></div></div>
+      </div>
+
+      <div class="tab" data-tab="media">
+        <h2>Media</h2><p class="muted">Avatar, background and music. Saved as soon as you pick a file.</p>
+        <div class="grid3">
+          <div class="card up" data-kind="avatar"><h4>__I_user__ Avatar</h4><p class="muted small">PNG or JPG, 3 MB. Empty = your Minecraft head.</p><div class="up-prev" id="pv_avatar"></div>
+            <div class="up-btns"><label class="btn">__I_upload__ Upload<input type="file" accept=".png,.jpg,.jpeg,.gif" hidden></label><button class="btn ghost" data-remove>__I_trash__</button></div></div>
+          <div class="card up" data-kind="bg"><h4>__I_film__ Background</h4><p class="muted small">MP4/WebM/GIF video (15 MB) or PNG/JPG image (6 MB).</p><div class="up-prev" id="pv_bg"></div>
+            <div class="up-btns"><label class="btn">__I_upload__ Upload<input type="file" accept=".mp4,.webm,.gif,.png,.jpg,.jpeg" hidden></label><button class="btn ghost" data-remove>__I_trash__</button></div></div>
+          <div class="card up" data-kind="audio"><h4>__I_music__ Music</h4><p class="muted small">MP3, WAV or OGG, 10 MB. Plays when someone opens your profile.</p><div class="up-prev" id="pv_audio"></div>
+            <div class="up-btns"><label class="btn">__I_upload__ Upload<input type="file" accept=".mp3,.wav,.ogg" hidden></label><button class="btn ghost" data-remove>__I_trash__</button></div></div>
+        </div>
+      </div>
+
+      <div class="tab" data-tab="effects">
+        <h2>Effects</h2><p class="muted">The fun stuff.</p>
+        <div class="card"><h4>__I_type__ Name effect</h4><div class="choices small" id="c_nameEffect"></div></div>
+        <div class="card"><h4>__I_sparkles__ Background effect</h4><div class="choices small" id="c_bgEffect"></div></div>
+        <div class="card"><label class="sw"><input type="checkbox" id="f_cursorTrail"><i></i>Sparkle trail behind the cursor (website)</label>
+          <label class="sw"><input type="checkbox" id="f_typewriterBio"><i></i>Type out the bio (website)</label></div>
+      </div>
+      <div class="savebar" id="saveBar"><span id="saveMsg">Unsaved changes</span><button class="btn ghost" id="resetBtn">Undo</button><button class="btn glow" id="saveBtn">__I_check__ Save</button></div>
+    </section>
+
+    <section class="preview"><div class="pv-head"><span>Live preview</span><div class="seg" id="pvSize"><button class="on" data-pv="desk">__I_monitor__</button><button data-pv="mc">__I_gamepad__</button></div></div>
+      <div class="pv-frame" id="pvFrame"><div class="profile-root" id="pvRoot"></div></div></section>
+  </div>
+</main>
+
+<!-- ======================= PUBLIC PROFILE ======================= -->
+<main id="page-user" class="page" hidden><div class="profile-root full" id="userRoot"></div></main>
+
+<div id="toasts"></div>
+<script src="/assets/icons.js"></script>
+<script src="/assets/site.js"></script>
+</body>
+</html>

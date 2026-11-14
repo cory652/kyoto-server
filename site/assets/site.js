@@ -222,7 +222,7 @@ function renderProfile(root, p, opts = {}) {
   const letters = nameFx === 'rainbow' || nameFx === 'wave' ? [...name].map((ch, i) => `<span style="animation-delay:${i * .08}s">${esc(ch)}</span>`).join('') : esc(name);
   const avatar = media.avatar || `https://mc-heads.net/avatar/${encodeURIComponent(p.name || 'MHF_Steve')}/128`;
   const badges = [owner ? `<span class="owner">${icon('crown')}Owner of Kyoto Client</span>` : '', `<span>${icon('sparkles')}Kyoto</span>`, ...(p.tags || []).map(t => `<span>${esc(t)}</span>`)].join('');
-  const links = (p.links || []).map(l => { const href = /^https?:/.test(l) ? l : 'https://' + l; const li = linkInfo(href); return `<a href="${esc(href)}" target="_blank" rel="noopener" title="${esc(li.name)}">${icon(li.icon)}</a>`; }).join('');
+  const links = (p.links || []).map(l => { const href = /^https?:/.test(l) ? l : 'https://' + l; const li = linkInfo(href); return opts.noLinks ? `<a title="${esc(li.name)}" aria-disabled="true">${icon(li.icon)}</a>` : `<a href="${esc(href)}" target="_blank" rel="noopener" title="${esc(li.name)}">${icon(li.icon)}</a>`; }).join('');
   root.innerHTML = `<div class="pr-bg">${bg}</div><div class="pr-dim" style="opacity:${bg ? (p.bgDim ?? 45) / 100 : 0}"></div><canvas class="pr-fx"></canvas>
     ${opts.back ? `<a class="btn ghost sm pr-back" href="/" data-link>${icon('arrow')} Kyoto</a>` : ''}
     <div class="pr-card ${card} ${layout === 'compact' ? 'compact' : ''}">
@@ -288,7 +288,7 @@ function mediaUrls(p, name, bust = '') {
 
 // landing: a sample profile in the phone
 renderProfile($('#pfMini'), { name: 'heffm', displayName: 'hef', bio: 'hef the man', location: 'Hef Town', badges: ['owner', 'kyoto'], tags: ['Builder'], links: ['youtube.com/@hef', 'tiktok.com/@hef', 'discord.gg/kyoto'], accent: '#ff5d7a', nameEffect: 1, bgEffect: 6, views: 245 },
-  { media: { image: '/media/sky-night.webp' }, static: true });
+  { media: { image: '/media/sky-night.webp' }, static: true, noLinks: true });
 $('#pfMini .pr-dim').style.opacity = .35;
 
 /* ===================== public profile /u/<name> ===================== */

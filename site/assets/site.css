@@ -364,3 +364,4 @@ label output { color: var(--mut); font-weight: 500; margin-left: 6px; }
 .hero-title .w1, .hero-title .w2 { filter: none; }
 @keyframes title { from { opacity: 0; transform: translateY(20px); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .reveal { opacity: 1; } }
+#pfMini .pr-links a { pointer-events: none; cursor: default; }

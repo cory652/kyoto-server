@@ -3,7 +3,7 @@
 const CONFIG = {
   // The Kyoto server. Same server hosts this site, so normally it's just this page's address.
   api: /onrender\.com$|localhost|127\.0\.0\.1/.test(location.hostname) ? location.origin : 'https://kyoto-server.onrender.com',
-  launcherUrl: '',   // >>> link to KyotoLauncher.exe (Discord attachment, GitHub release...) <<<
+  launcherUrl: 'https://cdn.discordapp.com/attachments/1571013133319933982/1571013394113237073/Kyoto_Launcher.exe?ex=6af92fbd&is=6af7de3d&hm=53eaec80108ab0c99fd950e26e0a9c1d051144dd82411bfd4861ce9d9bb07f8c&',   // >>> link to KyotoLauncher.exe (Discord attachment, GitHub release...) <<<
   discordUrl: '',    // >>> your Discord invite <<<
 };
 const $ = (s, r = document) => r.querySelector(s);
@@ -114,12 +114,15 @@ addEventListener('scroll', () => { if (navTick) return; navTick = true; requestA
 function route() {
   const p = location.pathname;
   const user = /^\/u\/([A-Za-z0-9_]{1,16})\/?$/.exec(p) || (new URLSearchParams(location.search).get('u') ? [0, new URLSearchParams(location.search).get('u')] : null);
-  $('#page-home').hidden = !!user || p.startsWith('/edit');
-  $('#page-edit').hidden = !p.startsWith('/edit');
+  const edit = p.startsWith('/edit'), mod = p.startsWith('/mod');
+  $('#page-home').hidden = !!user || edit || mod;
+  $('#page-edit').hidden = !edit;
+  $('#page-mod').hidden = !mod;
   $('#page-user').hidden = !user;
   $('#nav').style.display = user ? 'none' : '';
   if (user) return openUser(user[1]);
-  if (p.startsWith('/edit')) return openEditor();
+  if (edit) return openEditor();
+  if (mod) return openMod();
   if (location.hash) setTimeout(() => { const t = $(location.hash); if (t) t.scrollIntoView({ behavior: 'smooth' }); }, 60);
 }
 document.addEventListener('click', e => {
@@ -344,6 +347,7 @@ async function login() {
     $('#lgBtn').textContent = 'Checking…';
     const r = await api('/web/login', { method: 'POST', body: { name, code }, auth: false });
     localStorage.setItem('kyoto.token', r.token);
+    if (location.pathname.startsWith('/mod')) { toast(`Welcome, ${r.name}`, 'Opening the staff panel', 'ok'); $('#page-edit').hidden = true; $('#page-mod').hidden = false; openMod(); return; }
     toast(`Welcome, ${r.name}`, 'You can edit your profile now', 'ok');
     startDash(await api('/me'));
   } catch (e) {
@@ -356,6 +360,7 @@ function startDash(me) {
   $('#meName').textContent = me.name; $('#meHead').src = `https://mc-heads.net/avatar/${encodeURIComponent(me.name)}/64`;
   $('#meSub').textContent = me.owner ? 'Owner of Kyoto Client' : 'Kyoto profile';
   $('#viewProfile').href = `/u/${encodeURIComponent(me.name)}`;
+  if (me.staff && !$('#staffLink')) $('#viewProfile').insertAdjacentHTML('beforebegin', `<a class="btn ghost wide" id="staffLink" href="/mod" data-link>${icon('shield')} Staff panel</a>`);
   const prof = me.profile || {};
   P = {}; for (const f of FIELDS) P[f] = prof[f] ?? DEF[f];
   if (!prof.accent && prof.hue != null) P.accent = hslHex(prof.hue);
@@ -453,6 +458,158 @@ $$('.up').forEach(card => {
       const me = await api('/me'); P._raw = Object.assign(P._raw, me.profile); MEDIA = mediaUrls(me.profile, ME.name, '?t=' + Date.now()); updateMediaPreviews(); refresh(false); toast('Removed');
     } catch (err) { toast('Couldn\'t remove', err.message, 'bad'); }
   };
+});
+
+
+/* ===================== staff panel (/mod) ===================== */
+var MOD = null, MQ = null, PSEL = null;
+const ago = t => { if (!t) return 'never'; const s = (Date.now() - t) / 1000; if (s < 60) return 'just now'; if (s < 3600) return Math.floor(s / 60) + 'm ago'; if (s < 86400) return Math.floor(s / 3600) + 'h ago'; return Math.floor(s / 86400) + 'd ago'; };
+const until = t => !t ? 'Permanent' : t < Date.now() ? 'Expired' : 'Ends ' + new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const head = n => `<img class="mhead-img" src="https://mc-heads.net/avatar/${encodeURIComponent(n || 'MHF_Steve')}/40" alt="" loading="lazy">`;
+const empty = (ic, t) => `<div class="mempty">${icon(ic)}<span>${esc(t)}</span></div>`;
+async function openMod() {
+  if (!localStorage.getItem('kyoto.token')) { $('#page-mod').hidden = true; $('#page-edit').hidden = false; $('#dash').hidden = true; showLogin(); $('#lgMsg').textContent = 'Staff: log in with your code to open the staff panel.'; return; }
+  try { MOD = await api('/mod/me'); } catch (e) { if (e.status === 401) { localStorage.removeItem('kyoto.token'); return openMod(); } $('#modGate').hidden = false; $('#modGateMsg').textContent = e.message; return; }
+  if (!MOD.staff) { $('#mdash').hidden = true; $('#modGate').hidden = false; $('#modGateMsg').textContent = `Signed in as ${MOD.name}. This area is only for Kyoto staff.`; return; }
+  $('#modGate').hidden = true; $('#mdash').hidden = false;
+  $('#modName').textContent = MOD.name; $('#modHead').src = `https://mc-heads.net/avatar/${encodeURIComponent(MOD.name)}/64`;
+  $('#modRole').textContent = MOD.owner ? 'Owner' : 'Moderator';
+  $('#navStaff').style.display = ''; $('#sAdd').closest('.card').style.display = MOD.owner ? '' : 'none';
+  modTab(new URLSearchParams(location.search).get('tab') || 'overview');
+}
+function modTab(t) {
+  $$('#modNav button').forEach(b => b.classList.toggle('on', b.dataset.mt === t));
+  $$('.mpanel .tab').forEach(x => x.classList.toggle('on', x.dataset.mt === t));
+  history.replaceState(null, '', '/mod' + (t === 'overview' ? '' : '?tab=' + t));
+  modLoad(t);
+}
+$$('#modNav button').forEach(b => b.onclick = () => modTab(b.dataset.mt));
+$('#modRefresh').onclick = () => { const t = ($('#modNav button.on') || {}).dataset; modLoad(t ? t.mt : 'overview'); toast('Refreshed'); };
+async function modDo(path, body, ok) {
+  try { await api(path, { method: 'POST', body }); if (ok) toast(ok, '', 'ok'); const t = $('#modNav button.on').dataset.mt; modLoad(t); if (PSEL && t === 'players') showPlayer(PSEL); return true; }
+  catch (e) { toast('Couldn\'t do that', e.message, 'bad'); return false; }
+}
+async function modQueue() { MQ = await api('/mod/queue'); $('#nbReports').textContent = MQ.reports.length || ''; $('#nbPending').textContent = MQ.pending.length || ''; return MQ; }
+async function modLoad(t) {
+  try {
+    if (t === 'overview') {
+      const [o] = await Promise.all([api('/mod/overview'), modQueue()]);
+      const st = [['Players', o.users, 'users'], ['Online now', o.online, 'activity'], ['New today', o.newToday, 'userplus'], ['Chat today', o.chatToday, 'chat'],
+        ['Reports', o.reports, 'flag'], ['Awaiting approval', o.pending, 'cape'], ['Active bans', o.bans, 'ban'], ['Muted', o.mutes, 'mute']];
+      $('#mStats').innerHTML = st.map(([l, v, ic]) => `<div class="mstat">${icon(ic)}<b>${Number(v || 0).toLocaleString()}</b><span>${l}</span></div>`).join('');
+      $('#mStaffMini').innerHTML = o.staff.map(x => `<div class="mrow">${head(x.name)}<b>${esc(x.name)}</b><span class="pill ${x.role}">${x.role === 'owner' ? 'Owner' : 'Mod'}</span></div>`).join('');
+      $('#mRecent').innerHTML = o.recent.length ? o.recent.map(logRow).join('') : empty('history', 'No staff actions yet');
+    }
+    if (t === 'reports') {
+      const q = await modQueue();
+      $('#mReports').innerHTML = q.reports.length ? q.reports.map(r => {
+        const tg = r.target || {};
+        return `<div class="mitem"><div class="mi-main">${head(tg.name)}<div><div class="mi-top"><b>${esc(tg.name || 'Unknown')}</b><span class="pill">${esc(r.kind)}</span><span class="muted small">reported by ${esc(r.byName)} · ${ago(r.at)}</span></div>
+          <p class="mi-text">${tg.gone ? '<i class="muted">Already deleted</i>' : esc(tg.text || '(no text)')}</p>${tg.image ? `<img class="mi-img" src="${CONFIG.api}/hub/image?id=${tg.image}&auth=${encodeURIComponent(localStorage.getItem('kyoto.token') || '')}" alt="">` : ''}
+          <p class="muted small">Reason: ${esc(r.reason || 'none given')}</p></div></div>
+          <div class="mi-act">${tg.gone ? '' : `<button class="btn sm danger" data-del="${esc(r.kind === 'chat' ? 'chat' : 'post')}:${esc(r.id)}">${icon('trash')} Delete</button>`}
+          ${tg.name ? `<button class="btn ghost sm" data-ban="${esc(tg.name)}">${icon('ban')} Ban</button><button class="btn ghost sm" data-pl="${esc(tg.name)}">${icon('user')} Player</button>` : ''}
+          <button class="btn ghost sm" data-dis="${r.at}|${esc(r.by)}">${icon('check')} Dismiss</button></div></div>`;
+      }).join('') : empty('check', 'No reports. Nice and quiet.');
+    }
+    if (t === 'approvals') {
+      const q = await modQueue();
+      $('#mPending').innerHTML = q.pending.length ? q.pending.map(p => `<div class="mcape"><img src="${CONFIG.api}/hub/image?id=${p.id}&auth=${encodeURIComponent(localStorage.getItem('kyoto.token') || '')}" alt=""><b>${esc(p.title || 'Untitled')}</b><span class="muted small">by ${esc(p.name)} · ${ago(p.at)}</span>
+        <div class="mi-act"><button class="btn sm" data-ok="${p.id}">${icon('check')} Approve</button><button class="btn ghost sm" data-del="post:${p.id}">${icon('x')} Reject</button></div></div>`).join('') : empty('cape', 'Nothing waiting for approval');
+    }
+    if (t === 'players') playerSearch();
+    if (t === 'bans') {
+      const q = await modQueue();
+      $('#mBans').innerHTML = q.banList.length ? q.banList.map(b => `<div class="mitem"><div class="mi-main">${head(b.name)}<div><div class="mi-top"><b>${esc(b.name)}</b><span class="pill bad">Banned</span><span class="muted small">${until(b.until)}</span></div>
+        <p class="mi-text">${esc(b.reason || 'No reason saved')}</p><p class="muted small">${b.byName ? 'By ' + esc(b.byName) + ' · ' + ago(b.at) : ''}</p></div></div>
+        <div class="mi-act"><button class="btn ghost sm" data-unban="${esc(b.name)}">${icon('check')} Unban</button></div></div>`).join('') : empty('ban', 'Nobody is banned');
+    }
+    if (t === 'chat') {
+      const c = await api('/mod/chat');
+      $('#mChat').innerHTML = c.messages.length ? c.messages.map(m => `<div class="mitem slim"><div class="mi-main">${head(m.name)}<div><div class="mi-top"><b>${esc(m.name)}</b>${m.staff ? '<span class="pill owner">Staff</span>' : ''}<span class="muted small">${ago(m.at)}</span></div><p class="mi-text">${esc(m.text)}</p></div></div>
+        <div class="mi-act"><button class="btn ghost sm" data-del="chat:${m.id}">${icon('trash')}</button>${m.staff ? '' : `<button class="btn ghost sm" data-mute="${esc(m.name)}">${icon('mute')}</button><button class="btn ghost sm" data-ban="${esc(m.name)}">${icon('ban')}</button>`}</div></div>`).join('') : empty('chat', 'No chat messages yet');
+    }
+    if (t === 'staff') {
+      const o = await api('/mod/overview');
+      $('#mStaff').innerHTML = o.staff.map(x => `<div class="mitem slim"><div class="mi-main">${head(x.name)}<div><div class="mi-top"><b>${esc(x.name)}</b><span class="pill ${x.role}">${x.role === 'owner' ? 'Owner' : 'Moderator'}</span></div>
+        <p class="muted small">${x.role === 'owner' ? 'Set with the OWNERS setting on Render' : 'Added in the staff panel'}</p></div></div>
+        <div class="mi-act">${MOD.owner && x.role === 'mod' ? `<button class="btn ghost sm" data-unstaff="${esc(x.name)}">${icon('x')} Remove</button>` : ''}</div></div>`).join('');
+    }
+    if (t === 'log') {
+      const l = await api('/mod/audit');
+      $('#mLog').innerHTML = l.log.length ? l.log.map(logRow).join('') : empty('history', 'No staff actions yet');
+    }
+  } catch (e) { toast('Couldn\'t load', e.message, 'bad'); if (e.status === 401) { localStorage.removeItem('kyoto.token'); openMod(); } }
+}
+function logRow(x) { return `<div class="mrow log">${head(x.byName)}<div><b>${esc(x.byName)}</b> <span>${esc(x.action)}</span> ${x.target ? `<b>${esc(x.target)}</b>` : ''}${x.detail ? `<div class="muted small">${esc(x.detail)}</div>` : ''}</div><span class="muted small">${ago(x.at)}</span></div>`; }
+let pTimer;
+$('#pSearch').oninput = () => { clearTimeout(pTimer); pTimer = setTimeout(playerSearch, 250); };
+async function playerSearch() {
+  try {
+    const r = await api('/mod/players?q=' + encodeURIComponent($('#pSearch').value.trim()));
+    $('#pList').innerHTML = r.players.length ? r.players.map(p => `<button class="mrow pick ${PSEL === p.name ? 'on' : ''}" data-pl="${esc(p.name)}">${head(p.name)}<b>${esc(p.name)}</b>
+      ${p.online ? '<i class="dot on"></i>' : ''}${p.owner ? '<span class="pill owner">Owner</span>' : p.staff ? '<span class="pill mod">Mod</span>' : ''}${p.banned ? '<span class="pill bad">Banned</span>' : ''}${p.muted ? '<span class="pill">Muted</span>' : ''}</button>`).join('') : empty('search', 'No players found');
+  } catch (e) { toast('Search failed', e.message, 'bad'); }
+}
+async function showPlayer(name) {
+  PSEL = name; $$('#pList .mrow').forEach(b => b.classList.toggle('on', b.dataset.pl === name));
+  try {
+    const p = await api('/mod/player?name=' + encodeURIComponent(name));
+    const pr = p.profile;
+    $('#pDetail').innerHTML = `<div class="pd-head"><img src="https://mc-heads.net/body/${encodeURIComponent(p.name)}/90" alt=""><div><h3>${esc(p.name)}</h3>
+      <div class="mi-top">${p.online ? '<span class="pill ok">Online' + (p.server ? ' · ' + esc(p.server) : '') + '</span>' : `<span class="pill">Last seen ${ago(p.lastSeen)}</span>`}
+      ${p.owner ? '<span class="pill owner">Owner</span>' : p.staff ? '<span class="pill mod">Mod</span>' : ''}${p.banned ? '<span class="pill bad">Banned</span>' : ''}${p.muted ? `<span class="pill">Muted · ${until(p.mutedUntil)}</span>` : ''}</div>
+      <p class="muted small">Joined ${p.joined ? new Date(p.joined).toLocaleDateString() : 'unknown'} · ${p.friends} friends · ${p.posts} Hub posts · ${p.reports} reports · ${pr.views} profile views</p></div></div>
+      ${p.ban ? `<div class="pd-ban">${icon('ban')}<div><b>Banned: ${esc(p.ban.reason || '')}</b><span class="muted small">${until(p.ban.until)}${p.ban.byName ? ' · by ' + esc(p.ban.byName) : ''}</span></div></div>` : ''}
+      <div class="pd-acts">${p.owner ? '' : p.banned ? `<button class="btn sm" data-unban="${esc(p.name)}">${icon('check')} Unban</button>` : `<button class="btn sm danger" data-ban="${esc(p.name)}">${icon('ban')} Ban</button>`}
+        ${p.owner ? '' : p.muted ? `<button class="btn ghost sm" data-unmute="${esc(p.name)}">${icon('volume')} Unmute</button>` : `<button class="btn ghost sm" data-mute="${esc(p.name)}">${icon('mute')} Mute</button>`}
+        ${p.owner ? '' : `<button class="btn ghost sm" data-reset="${esc(p.name)}">${icon('refresh')} Reset profile</button>`}
+        <a class="btn ghost sm" href="/u/${encodeURIComponent(p.name)}" target="_blank">${icon('external')} View profile</a></div>
+      <h4>Profile</h4><div class="pd-prof"><p><b>${esc(pr.displayName || p.name)}</b>${pr.location ? ' · ' + esc(pr.location) : ''}</p><p>${esc(pr.bio || 'No bio')}</p>
+        ${pr.links.length ? `<p class="muted small">${pr.links.map(esc).join(' · ')}</p>` : ''}${pr.media.length ? `<p class="muted small">Uploaded: ${pr.media.join(', ')}</p>` : ''}</div>
+      <h4>Recent Hub chat</h4>${p.chat.length ? p.chat.map(m => `<div class="mrow slim"><span class="mi-text">${esc(m.text)}</span><span class="muted small">${ago(m.at)}</span><button class="btn ghost xs" data-del="chat:${m.id}">${icon('trash')}</button></div>`).join('') : '<p class="muted small">No messages</p>'}
+      <h4>History</h4>${p.history.length ? p.history.map(logRow).join('') : '<p class="muted small">No staff actions on this player</p>'}`;
+  } catch (e) { $('#pDetail').innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
+}
+function modal(title, sub, body, okText, onOk, danger = true) {
+  $('#mmTitle').textContent = title; $('#mmSub').textContent = sub; $('#mmBody').innerHTML = body;
+  $('#mmOk').textContent = okText; $('#mmOk').classList.toggle('danger', danger); $('#mModal').hidden = false;
+  $('#mmOk').onclick = async () => { $('#mmOk').disabled = true; const ok = await onOk(); $('#mmOk').disabled = false; if (ok !== false) $('#mModal').hidden = true; };
+  const f = $('#mmBody input, #mmBody select'); if (f) setTimeout(() => f.focus(), 50);
+}
+$('#mmCancel').onclick = () => { $('#mModal').hidden = true; };
+$('#mModal').onclick = e => { if (e.target.id === 'mModal') $('#mModal').hidden = true; };
+function banDialog(name) {
+  if (!name) return toast('Type a Minecraft name first');
+  modal(`Ban ${name}`, 'They lose the Hub, DMs and their website profile until the ban ends.',
+    `<label>Reason<input id="mmReason" maxlength="160" placeholder="e.g. Spamming links in Hub chat"></label>
+     <label>How long<select id="mmLen"><option value="1">1 hour</option><option value="24">1 day</option><option value="168" selected>7 days</option><option value="720">30 days</option><option value="0">Permanent</option></select></label>
+     <label class="mcheck"><input type="checkbox" id="mmWipe" checked> Delete their Hub posts and chat messages</label>`,
+    'Ban', () => modDo('/mod/ban', { name, reason: $('#mmReason').value.trim(), hours: Number($('#mmLen').value), wipe: $('#mmWipe').checked }, `${name} banned`));
+}
+function muteDialog(name) {
+  if (!name) return toast('Type a Minecraft name first');
+  modal(`Mute ${name}`, "They can still play and use Kyoto, but can't post or chat in the Hub.",
+    `<label>How long<select id="mmLen"><option value="15">15 minutes</option><option value="60" selected>1 hour</option><option value="1440">1 day</option><option value="10080">7 days</option></select></label>`,
+    'Mute', () => modDo('/mod/mute', { name, minutes: Number($('#mmLen').value) }, `${name} muted`));
+}
+$('#bOpen').onclick = () => banDialog($('#bName').value.trim());
+$('#mOpen').onclick = () => muteDialog($('#bName').value.trim());
+$('#sAdd').onclick = async () => { const n = $('#sName').value.trim(); if (!n) return; if (await modDo('/mod/staff/add', { name: n }, `${n} is now a moderator`)) $('#sName').value = ''; };
+$('#clearReports').onclick = () => modal('Clear all reports?', 'This removes every report without deleting anything.', '', 'Clear', () => modDo('/mod/clearreports', {}, 'Reports cleared'));
+$('#page-mod').addEventListener('click', e => {
+  const b = e.target.closest('[data-del],[data-ban],[data-unban],[data-mute],[data-unmute],[data-ok],[data-dis],[data-pl],[data-reset],[data-unstaff]');
+  if (!b) return; const d = b.dataset;
+  if (d.pl !== undefined) { if (!$('.mpanel .tab[data-mt=players]').classList.contains('on')) modTab('players'); return showPlayer(d.pl); }
+  if (d.del) { const [kind, id] = d.del.split(':'); return modDo('/mod/delete', { kind, id }, kind === 'chat' ? 'Message deleted' : 'Post removed'); }
+  if (d.ban) return banDialog(d.ban);
+  if (d.mute) return muteDialog(d.mute);
+  if (d.unban) return modDo('/mod/unban', { name: d.unban }, `${d.unban} unbanned`);
+  if (d.unmute) return modDo('/mod/unmute', { name: d.unmute }, `${d.unmute} unmuted`);
+  if (d.ok) return modDo('/mod/approve', { id: Number(d.ok) }, 'Approved, it is live in the Hub');
+  if (d.dis) { const [at, by] = d.dis.split('|'); return modDo('/mod/report/dismiss', { at: Number(at), by }, 'Report dismissed'); }
+  if (d.reset) return modal(`Reset ${d.reset}'s profile?`, 'Removes their bio, links, name, and uploaded media. This cannot be undone.', '', 'Reset', () => modDo('/mod/profile/reset', { name: d.reset }, 'Profile reset'));
+  if (d.unstaff) return modal(`Remove ${d.unstaff} from staff?`, 'They lose access to this panel right away.', '', 'Remove', () => modDo('/mod/staff/remove', { name: d.unstaff }, 'Removed from staff'));
 });
 
 /* ===================== start ===================== */

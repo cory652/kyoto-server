@@ -10,7 +10,7 @@
 <link rel="icon" href="/img/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Playfair+Display:wght@600;800&family=Silkscreen&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/site.css?v=8">
+<link rel="stylesheet" href="/assets/site.css?v=10">
 </head>
 <body>
 <div id="sky"><div id="art"></div><canvas id="stars"></canvas><div class="vignette"></div><div class="grain"></div></div>
@@ -238,10 +238,59 @@
 </main>
 
 <!-- ======================= PUBLIC PROFILE ======================= -->
+<main id="page-mod" class="page" hidden>
+  <div class="mod-gate" id="modGate" hidden>
+    <div class="login-card"><img class="logo-k" src="/img/logos/logo_k_starry.png" alt=""><h2>Staff only</h2>
+      <p id="modGateMsg">This area is for Kyoto staff.</p><a class="btn ghost wide" href="/" data-link>__I_arrow__ Back to Kyoto</a></div>
+  </div>
+  <div class="mdash" id="mdash" hidden>
+    <aside class="side">
+      <div class="me"><img id="modHead" alt=""><div><b id="modName">—</b><span id="modRole">Staff</span></div></div>
+      <nav id="modNav">
+        <button data-mt="overview" class="on">__I_grid__ Overview</button>
+        <button data-mt="reports">__I_flag__ Reports <i class="badge" id="nbReports"></i></button>
+        <button data-mt="approvals">__I_cape__ Approvals <i class="badge" id="nbPending"></i></button>
+        <button data-mt="players">__I_search__ Players</button>
+        <button data-mt="bans">__I_ban__ Bans + mutes</button>
+        <button data-mt="chat">__I_chat__ Hub chat</button>
+        <button data-mt="staff" id="navStaff">__I_shield__ Staff</button>
+        <button data-mt="log">__I_history__ Log</button>
+      </nav>
+      <div class="side-foot">
+        <button class="btn ghost wide" id="modRefresh">__I_refresh__ Refresh</button>
+        <a class="btn ghost wide" href="/edit" data-link>__I_user__ My profile</a>
+      </div>
+    </aside>
+    <section class="panel mpanel">
+      <div class="tab on" data-mt="overview"><h2>Overview</h2><p class="muted">What's happening on Kyoto right now.</p>
+        <div class="mstats" id="mStats"></div>
+        <div class="row2"><div class="card"><h4>__I_shield__ Staff team</h4><div id="mStaffMini"></div></div>
+          <div class="card"><h4>__I_history__ Recent actions</h4><div id="mRecent" class="mlist"></div></div></div></div>
+      <div class="tab" data-mt="reports"><div class="mhead"><div><h2>Reports</h2><p class="muted">Things players reported in the Hub.</p></div><button class="btn ghost sm" id="clearReports">__I_trash__ Clear all</button></div>
+        <div id="mReports" class="mlist"></div></div>
+      <div class="tab" data-mt="approvals"><h2>Approvals</h2><p class="muted">Capes posted to the Hub wait here until staff approve them.</p>
+        <div id="mPending" class="mgrid"></div></div>
+      <div class="tab" data-mt="players"><h2>Players</h2><p class="muted">Search anyone who has used Kyoto.</p>
+        <div class="msearch">__I_search__<input id="pSearch" placeholder="Minecraft name" maxlength="16" autocomplete="off"></div>
+        <div class="msplit"><div id="pList" class="mlist"></div><div id="pDetail" class="card pdetail"><p class="muted">Pick a player to see their info.</p></div></div></div>
+      <div class="tab" data-mt="bans"><h2>Bans + mutes</h2><p class="muted">Banned players can't use the Hub, DMs or their website profile. Muted players can't chat.</p>
+        <div class="card"><h4>__I_gavel__ Punish a player</h4><div class="mform"><input id="bName" placeholder="Minecraft name" maxlength="16"><button class="btn sm danger" id="bOpen">__I_ban__ Ban…</button><button class="btn ghost sm" id="mOpen">__I_mute__ Mute…</button></div></div>
+        <div id="mBans" class="mlist"></div></div>
+      <div class="tab" data-mt="chat"><h2>Hub chat</h2><p class="muted">The newest 120 messages. Delete anything that breaks the rules.</p><div id="mChat" class="mlist"></div></div>
+      <div class="tab" data-mt="staff"><h2>Staff</h2><p class="muted">Owners can add moderators. Moderators can do everything here except manage staff.</p>
+        <div class="card"><h4>__I_userplus__ Add a moderator</h4><div class="mform"><input id="sName" placeholder="Minecraft name" maxlength="16"><button class="btn sm" id="sAdd">__I_plus__ Add</button></div></div>
+        <div id="mStaff" class="mlist"></div></div>
+      <div class="tab" data-mt="log"><h2>Log</h2><p class="muted">Every staff action, newest first.</p><div id="mLog" class="mlist"></div></div>
+    </section>
+  </div>
+  <div class="mmodal" id="mModal" hidden><div class="mbox"><h3 id="mmTitle">Ban</h3><p class="muted" id="mmSub"></p>
+    <div id="mmBody"></div><div class="mform end"><button class="btn ghost sm" id="mmCancel">Cancel</button><button class="btn sm danger" id="mmOk">Confirm</button></div></div></div>
+</main>
+
 <main id="page-user" class="page" hidden><div class="profile-root full" id="userRoot"></div></main>
 
 <div id="toasts"></div>
-<script src="/assets/icons.js?v=8"></script>
-<script src="/assets/site.js?v=8"></script>
+<script src="/assets/icons.js?v=10"></script>
+<script src="/assets/site.js?v=10"></script>
 </body>
 </html>

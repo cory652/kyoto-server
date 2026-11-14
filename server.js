@@ -81,8 +81,10 @@ function limited(ip) {
 
 function auth(req) {
   const m = /^Bearer (.+)$/.exec(req.headers.authorization || '');
-  if (!m) return null;
-  const t = db.tokens[m[1]];
+  // <img> tags can't send headers: the staff panel passes ?auth=<token> for Hub images only
+  const qa = !m && req.method === 'GET' && req.url.startsWith('/hub/image') ? new URL(req.url, 'http://x').searchParams.get('auth') : null;
+  if (!m && !qa) return null;
+  const t = db.tokens[m ? m[1] : qa];
   return t ? t.uuid : null;
 }
 
@@ -330,7 +332,7 @@ routes['POST /web/logout'] = async (req, res, body, me) => {
 };
 routes['GET /me'] = async (req, res, body, me) => {
   const u = db.users[me] || {};
-  send(res, 200, { uuid: me, name: u.name, owner: OWNERS.includes(String(u.name || '').toLowerCase()), profile: db.profiles[me] || {} });
+  send(res, 200, { uuid: me, name: u.name, owner: OWNERS.includes(String(u.name || '').toLowerCase()), staff: isStaff(me), profile: db.profiles[me] || {} });
 };
 
 // ---------------- Kyoto jars for the launcher (put files in ./jars as kyoto-<mc version>.jar) ----------------
@@ -396,11 +398,20 @@ function clean(t, max) {
 }
 const nameOf = u => (db.users[u] || {}).name || '?';
 const isOwnerUuid = u => OWNERS.includes(nameOf(u).toLowerCase());
-const isBanned = u => H.bans.includes(u);
+H.staff = H.staff || []; H.banInfo = H.banInfo || {}; H.mutes = H.mutes || {}; H.audit = H.audit || [];
+const isStaff = u => isOwnerUuid(u) || H.staff.includes(u);
+function isBanned(u) {
+  if (!H.bans.includes(u)) return false;
+  const b = H.banInfo[u];
+  if (b && b.until && b.until < Date.now()) { H.bans = H.bans.filter(x => x !== u); delete H.banInfo[u]; save(); return false; }
+  return true;
+}
+function isMuted(u) { const t = H.mutes[u]; if (!t) return false; if (t < Date.now()) { delete H.mutes[u]; return false; } return true; }
 const lastAct = new Map();
 function slowmode(u, ms) { const t = lastAct.get(u) || 0; if (Date.now() - t < ms) return true; lastAct.set(u, Date.now()); return false; }
 function checkText(res, me, text) {
   if (isBanned(me)) { fail(res, 403, 'You are banned from the Kyoto Hub'); return false; }
+  if (isMuted(me)) { fail(res, 403, 'You are muted until ' + new Date(H.mutes[me]).toUTCString()); return false; }
   if (blocked(text)) { fail(res, 400, 'Blocked by the filter (bad words or unsafe content)'); return false; }
   return true;
 }
@@ -410,7 +421,7 @@ const q = req => new URL(req.url, 'http://x').searchParams;
 
 routes['GET /hub/posts'] = async (req, res, body, me) => {
   const type = q(req).get('type') || 'post';
-  const mod = isOwnerUuid(me);
+  const mod = isStaff(me);
   const list = H.posts.filter(p => p.type === type && (!p.pending || mod || p.uuid === me));
   const sort = q(req).get('sort') === 'top' ? (a, b) => b.likes.length - a.likes.length : (a, b) => b.at - a.at;
   send(res, 200, { posts: list.sort(sort).slice(0, 60).map(p => pub(p, me)), mod });
@@ -432,14 +443,14 @@ routes['POST /hub/post'] = async (req, res, body, me) => {
     if ((!isPng && !isGif) || buf.length > 1500000) return fail(res, 400, 'Cape must be a PNG or GIF under 1.5 MB');
     post.image = isGif ? 'gif' : 'png';
     fs.writeFileSync(path.join(HUB_IMG, String(post.id)), buf);
-    post.pending = REQUIRE_APPROVAL && !isOwnerUuid(me);
+    post.pending = REQUIRE_APPROVAL && !isStaff(me);
   }
   H.posts.push(post); if (H.posts.length > 2000) H.posts.shift();
   save(); send(res, 200, { ok: true, pending: !!post.pending });
 };
 routes['GET /hub/image'] = async (req, res, body, me) => {
   const id = Number(q(req).get('id')); const p = H.posts.find(x => x.id === id);
-  if (!p || !p.image || (p.pending && !isOwnerUuid(me) && p.uuid !== me)) return fail(res, 404, 'no image');
+  if (!p || !p.image || (p.pending && !isStaff(me) && p.uuid !== me)) return fail(res, 404, 'no image');
   send(res, 200, fs.readFileSync(path.join(HUB_IMG, String(id))), p.image === 'gif' ? 'image/gif' : 'image/png');
 };
 routes['GET /hub/preset'] = async (req, res, body, me) => {
@@ -453,7 +464,7 @@ routes['POST /hub/like'] = async (req, res, body, me) => {
 };
 routes['POST /hub/delete'] = async (req, res, body, me) => {
   const p = H.posts.find(x => x.id === Number(body.id)); if (!p) return fail(res, 404, 'gone');
-  if (p.uuid !== me && !isOwnerUuid(me)) return fail(res, 403, 'Not yours');
+  if (p.uuid !== me && !isStaff(me)) return fail(res, 403, 'Not yours');
   H.posts = H.posts.filter(x => x !== p); try { fs.unlinkSync(path.join(HUB_IMG, String(p.id))); } catch (e) { /* none */ }
   save(); send(res, 200, { ok: true });
 };
@@ -652,25 +663,139 @@ async function del(id){if(!confirm('Delete this post?'))return;try{await api('/n
 async function saveVer(){try{await api('/version',{version:$('ver').value,url:$('url').value,notes:$('notes').value});alert('Saved ✓')}catch(e){alert(e.message)}}
 load();
 </script></body></html>`;
-// owner tools
-function ownerOnly(res, me) { if (!isOwnerUuid(me)) { fail(res, 403, 'Owners only'); return false; } return true; }
+// ---------------- staff panel (website: /mod) ----------------
+// Owners (OWNERS env var) are always staff. Owners can add moderators from the panel.
+// Moderators can: approve/reject capes, delete posts + chat, handle reports, mute, ban (not other staff), reset profiles.
+const ownerOnly = (res, me) => { if (!isOwnerUuid(me)) { fail(res, 403, 'Owners only'); return false; } return true; };
+const staffOnly = (res, me) => { if (!isStaff(me)) { fail(res, 403, 'Staff only'); return false; } return true; };
+function audit(me, action, target, detail) {
+  H.audit.push({ at: Date.now(), by: me, action, target: target || '', detail: String(detail || '').slice(0, 160) });
+  if (H.audit.length > 1000) H.audit.shift();
+}
+const banOf = u => Object.assign({ name: nameOf(u), uuid: u }, H.banInfo[u] || {}, { byName: H.banInfo[u] ? nameOf(H.banInfo[u].by) : '' });
+function canPunish(res, me, u) {
+  if (!u) { fail(res, 404, 'No Kyoto player with that name'); return false; }
+  if (u === me) { fail(res, 400, "You can't do that to yourself"); return false; }
+  if (isOwnerUuid(u)) { fail(res, 403, "Owners can't be punished"); return false; }
+  if (isStaff(u) && !isOwnerUuid(me)) { fail(res, 403, 'Only an owner can punish staff'); return false; }
+  return true;
+}
+function reportTarget(r) {
+  if (r.kind === 'chat') { const m = H.chat.find(x => String(x.id) === String(r.id)); return m ? { name: nameOf(m.uuid), text: m.text, gone: false } : { gone: true }; }
+  if (r.kind === 'user' || r.kind === 'profile') { const u = byName(r.id); return { name: u ? nameOf(u) : r.id, text: u && db.profiles[u] ? (db.profiles[u].bio || '') : '', gone: !u }; }
+  const p = H.posts.find(x => String(x.id) === String(r.id));
+  return p ? { name: nameOf(p.uuid), text: [p.title, p.text].filter(Boolean).join(' - '), image: p.image ? p.id : null, type: p.type, gone: false } : { gone: true };
+}
+routes['GET /mod/me'] = async (req, res, body, me) => send(res, 200, { name: nameOf(me), staff: isStaff(me), owner: isOwnerUuid(me) });
+routes['GET /mod/overview'] = async (req, res, body, me) => {
+  if (!staffOnly(res, me)) return;
+  const day = Date.now() - 86400000;
+  send(res, 200, {
+    users: Object.keys(db.users).length, online: onlineCount(), profiles: Object.keys(db.profiles).length,
+    newToday: Object.values(db.users).filter(u => (u.joined || 0) > day).length,
+    chatToday: H.chat.filter(m => m.at > day).length, posts: H.posts.length,
+    pending: H.posts.filter(p => p.pending).length, reports: H.reports.length, bans: H.bans.filter(u => isBanned(u)).length,
+    mutes: Object.keys(H.mutes).filter(u => isMuted(u)).length,
+    staff: OWNERS.map(n => ({ name: n, role: 'owner' })).concat(H.staff.map(u => ({ name: nameOf(u), role: 'mod' }))),
+    recent: H.audit.slice(-8).reverse().map(x => Object.assign({ byName: nameOf(x.by) }, x))
+  });
+};
 routes['GET /mod/queue'] = async (req, res, body, me) => {
-  if (!ownerOnly(res, me)) return;
-  send(res, 200, { pending: H.posts.filter(p => p.pending).map(p => pub(p, me)), reports: H.reports.slice(-50).map(r => Object.assign({ byName: nameOf(r.by) }, r)), bans: H.bans.map(nameOf) });
+  if (!staffOnly(res, me)) return;
+  H.bans.forEach(isBanned); // drops expired bans
+  send(res, 200, {
+    pending: H.posts.filter(p => p.pending).map(p => pub(p, me)),
+    reports: H.reports.slice(-100).reverse().map(r => Object.assign({ byName: nameOf(r.by), target: reportTarget(r) }, r)),
+    bans: H.bans.map(nameOf), banList: H.bans.map(banOf)
+  });
 };
 routes['POST /mod/approve'] = async (req, res, body, me) => {
-  if (!ownerOnly(res, me)) return; const p = H.posts.find(x => x.id === Number(body.id)); if (p) p.pending = false; save(); send(res, 200, { ok: true });
+  if (!staffOnly(res, me)) return; const p = H.posts.find(x => x.id === Number(body.id)); if (!p) return fail(res, 404, 'Already gone');
+  p.pending = false; audit(me, 'approve', nameOf(p.uuid), p.title); save(); send(res, 200, { ok: true });
 };
+routes['POST /mod/delete'] = async (req, res, body, me) => {
+  if (!staffOnly(res, me)) return;
+  if (body.kind === 'chat') {
+    const m = H.chat.find(x => String(x.id) === String(body.id)); if (!m) return fail(res, 404, 'Already gone');
+    H.chat = H.chat.filter(x => x !== m); audit(me, 'delete chat', nameOf(m.uuid), m.text);
+  } else {
+    const p = H.posts.find(x => String(x.id) === String(body.id)); if (!p) return fail(res, 404, 'Already gone');
+    H.posts = H.posts.filter(x => x !== p); try { fs.unlinkSync(path.join(HUB_IMG, String(p.id))); } catch (e) { /* none */ }
+    audit(me, p.pending ? 'reject' : 'delete post', nameOf(p.uuid), p.title || p.text);
+  }
+  H.reports = H.reports.filter(r => !(String(r.id) === String(body.id) && (r.kind === 'chat') === (body.kind === 'chat')));
+  save(); send(res, 200, { ok: true });
+};
+routes['POST /mod/report/dismiss'] = async (req, res, body, me) => {
+  if (!staffOnly(res, me)) return;
+  H.reports = H.reports.filter(r => !(r.at === Number(body.at) && r.by === body.by)); audit(me, 'dismiss report', '', ''); save(); send(res, 200, { ok: true });
+};
+routes['POST /mod/clearreports'] = async (req, res, body, me) => { if (!staffOnly(res, me)) return; H.reports = []; audit(me, 'clear reports'); save(); send(res, 200, { ok: true }); };
 routes['POST /mod/ban'] = async (req, res, body, me) => {
-  if (!ownerOnly(res, me)) return; const u = byName(body.name); if (!u) return fail(res, 404, 'Unknown player');
+  if (!staffOnly(res, me)) return; const u = byName(body.name); if (!canPunish(res, me, u)) return;
+  const hours = Math.max(0, Math.min(24 * 365, Number(body.hours) || 0));
   if (!H.bans.includes(u)) H.bans.push(u);
-  H.posts = H.posts.filter(p => p.uuid !== u); H.chat = H.chat.filter(m => m.uuid !== u);
+  H.banInfo[u] = { reason: cleanStr(body.reason, 160) || 'No reason given', by: me, at: Date.now(), until: hours ? Date.now() + hours * 3600000 : 0 };
+  if (body.wipe !== false) { H.posts = H.posts.filter(p => p.uuid !== u); H.chat = H.chat.filter(m => m.uuid !== u); }
+  audit(me, 'ban', nameOf(u), (hours ? hours + 'h: ' : 'permanent: ') + H.banInfo[u].reason);
   save(); send(res, 200, { ok: true });
 };
 routes['POST /mod/unban'] = async (req, res, body, me) => {
-  if (!ownerOnly(res, me)) return; const u = byName(body.name); H.bans = H.bans.filter(x => x !== u); save(); send(res, 200, { ok: true });
+  if (!staffOnly(res, me)) return; const u = byName(body.name); if (!u) return fail(res, 404, 'Unknown player');
+  H.bans = H.bans.filter(x => x !== u); delete H.banInfo[u]; audit(me, 'unban', nameOf(u)); save(); send(res, 200, { ok: true });
 };
-routes['POST /mod/clearreports'] = async (req, res, body, me) => { if (!ownerOnly(res, me)) return; H.reports = []; save(); send(res, 200, { ok: true }); };
+routes['POST /mod/mute'] = async (req, res, body, me) => {
+  if (!staffOnly(res, me)) return; const u = byName(body.name); if (!canPunish(res, me, u)) return;
+  const mins = Math.max(1, Math.min(60 * 24 * 30, Number(body.minutes) || 60));
+  H.mutes[u] = Date.now() + mins * 60000; audit(me, 'mute', nameOf(u), mins + ' min'); save(); send(res, 200, { ok: true });
+};
+routes['POST /mod/unmute'] = async (req, res, body, me) => {
+  if (!staffOnly(res, me)) return; const u = byName(body.name); if (!u) return fail(res, 404, 'Unknown player');
+  delete H.mutes[u]; audit(me, 'unmute', nameOf(u)); save(); send(res, 200, { ok: true });
+};
+routes['POST /mod/profile/reset'] = async (req, res, body, me) => {
+  if (!staffOnly(res, me)) return; const u = byName(body.name); if (!canPunish(res, me, u)) return;
+  for (const k of Object.keys(MEDIA_KINDS)) { try { fs.unlinkSync(mediaFile(u, k)); } catch (e) { /* none */ } }
+  const views = (db.profiles[u] || {}).views || 0; db.profiles[u] = { views };
+  audit(me, 'reset profile', nameOf(u)); save(); send(res, 200, { ok: true });
+};
+routes['GET /mod/player'] = async (req, res, body, me) => {
+  if (!staffOnly(res, me)) return;
+  const u = byName(q(req).get('name')); if (!u) return fail(res, 404, 'No Kyoto player with that name');
+  const pr = presence.get(u) || {}; const prof = db.profiles[u] || {};
+  send(res, 200, {
+    name: nameOf(u), uuid: u, joined: (db.users[u] || {}).joined || 0, online: isOnline(u), lastSeen: pr.lastSeen || 0, server: pr.server || '',
+    owner: isOwnerUuid(u), staff: isStaff(u), banned: isBanned(u), ban: isBanned(u) ? banOf(u) : null, muted: isMuted(u), mutedUntil: H.mutes[u] || 0,
+    friends: list(db.friends, u).length, posts: H.posts.filter(p => p.uuid === u).length,
+    profile: { displayName: prof.displayName || '', bio: prof.bio || '', location: prof.location || '', links: prof.links || [], views: prof.views || 0,
+      media: Object.keys(MEDIA_KINDS).filter(k => prof[k + 'Ext']) },
+    chat: H.chat.filter(m => m.uuid === u).slice(-20).reverse(),
+    reports: H.reports.filter(r => { const t = reportTarget(r); return t.name && t.name.toLowerCase() === nameOf(u).toLowerCase(); }).length,
+    history: H.audit.filter(x => x.target.toLowerCase() === nameOf(u).toLowerCase()).slice(-15).reverse().map(x => Object.assign({ byName: nameOf(x.by) }, x))
+  });
+};
+routes['GET /mod/players'] = async (req, res, body, me) => {
+  if (!staffOnly(res, me)) return;
+  const s = String(q(req).get('q') || '').toLowerCase();
+  const out = Object.entries(db.users).filter(([u, v]) => !s || v.name.toLowerCase().includes(s))
+    .sort((a, b) => (isOnline(b[0]) - isOnline(a[0])) || ((b[1].joined || 0) - (a[1].joined || 0))).slice(0, 40)
+    .map(([u, v]) => ({ name: v.name, online: isOnline(u), banned: isBanned(u), muted: isMuted(u), staff: isStaff(u), owner: isOwnerUuid(u), joined: v.joined || 0 }));
+  send(res, 200, { players: out });
+};
+routes['GET /mod/chat'] = async (req, res, body, me) => {
+  if (!staffOnly(res, me)) return;
+  send(res, 200, { messages: H.chat.slice(-120).reverse().map(m => Object.assign({ name: nameOf(m.uuid), staff: isStaff(m.uuid) }, m)) });
+};
+routes['GET /mod/audit'] = async (req, res, body, me) => {
+  if (!staffOnly(res, me)) return; send(res, 200, { log: H.audit.slice(-200).reverse().map(x => Object.assign({ byName: nameOf(x.by) }, x)) });
+};
+routes['POST /mod/staff/add'] = async (req, res, body, me) => {
+  if (!ownerOnly(res, me)) return; const u = byName(body.name); if (!u) return fail(res, 404, 'That player has to open Kyoto once first');
+  if (!H.staff.includes(u) && !isOwnerUuid(u)) H.staff.push(u); audit(me, 'add staff', nameOf(u)); save(); send(res, 200, { ok: true });
+};
+routes['POST /mod/staff/remove'] = async (req, res, body, me) => {
+  if (!ownerOnly(res, me)) return; const u = byName(body.name); H.staff = H.staff.filter(x => x !== u); audit(me, 'remove staff', nameOf(u)); save(); send(res, 200, { ok: true });
+};
 
 // ---------------- website (static files in ./site) ----------------
 const SITE = path.join(__dirname, 'site');
@@ -679,7 +804,7 @@ const SITE_TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; cha
 function serveSite(req, res, pathname) {
   // pretty URLs: /edit, /u/<name>, /download, /features -> the single page app
   let rel = decodeURIComponent(pathname);
-  if (rel === '/' || /^\/(edit|u\/[A-Za-z0-9_]{1,16}|download|features|profile)\/?$/.test(rel)) rel = '/index.html';
+  if (rel === '/' || /^\/(edit|mod|u\/[A-Za-z0-9_]{1,16}|download|features|profile)\/?$/.test(rel)) rel = '/index.html';
   const file = path.normalize(path.join(SITE, rel));
   if (!file.startsWith(SITE) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return false;
   const ext = path.extname(file).toLowerCase();
@@ -744,7 +869,7 @@ const server = http.createServer(async (req, res) => {
         if (!fs.existsSync(file)) return fail(res, 404, 'no media');
         return send(res, 200, fs.readFileSync(file), MEDIA_TYPES[p[prof[2] + 'Ext']] || 'application/octet-stream');
       }
-      if (!uuid || !p) return fail(res, 404, 'no profile');
+      if (!uuid || !p || isBanned(uuid)) return fail(res, 404, 'no profile');
       if (!q(req).get('noview')) { p.views = (p.views || 0) + 1; save(); }
       const badges = ['kyoto'];
       if (isOwner) badges.unshift('owner');

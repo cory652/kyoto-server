@@ -270,6 +270,9 @@ routes['PUT /profile'] = async (req, res, body, me) => {
   if (has('avatarGlow')) p.avatarGlow = !!body.avatarGlow;
   if (has('cursorTrail')) p.cursorTrail = !!body.cursorTrail;
   if (has('typewriterBio')) p.typewriterBio = !!body.typewriterBio;
+  if (has('showLinks')) p.showLinks = !!body.showLinks;
+  if (has('showDiscord')) p.showDiscord = !!body.showDiscord;
+  if (has('unlinkDiscord') && body.unlinkDiscord) delete p.discord;
   p.views = old.views || 0;
   p.updated = Date.now();
   db.profiles[me] = p;
@@ -772,6 +775,82 @@ routes['GET /tiktok/events'] = async (req, res, body, me) => {
   send(res, 200, { state: t.state, username: t.username, seq: t.seq, events: t.events.filter(e => e.seq > since) });
 };
 
+// ---------------- CurseForge (the launcher's mod browser) ----------------
+// CurseForge needs an API key (free: console.curseforge.com). It stays here on the server, never in the launcher.
+const CF_KEY = process.env.CF_API_KEY || '';
+const cfCache = new Map(); // url -> { at, body }
+async function cf(pathAndQuery) {
+  if (!CF_KEY) { const e = new Error('CurseForge isn\'t set up on the Kyoto server yet (CF_API_KEY)'); e.code = 503; throw e; }
+  const hit = cfCache.get(pathAndQuery);
+  if (hit && Date.now() - hit.at < 5 * 60000) return hit.body;
+  const r = await fetch('https://api.curseforge.com' + pathAndQuery, { headers: { 'x-api-key': CF_KEY, Accept: 'application/json', 'User-Agent': 'KyotoServer/1.0' } });
+  if (!r.ok) { const e = new Error('CurseForge said ' + r.status); e.code = 502; throw e; }
+  const body = await r.json();
+  cfCache.set(pathAndQuery, { at: Date.now(), body });
+  if (cfCache.size > 400) cfCache.delete(cfCache.keys().next().value);
+  return body;
+}
+const CF_LOADER = { forge: 1, fabric: 4, quilt: 5, neoforge: 6 };
+const cfRoute = fn => async (req, res) => { try { send(res, 200, await fn(q(req))); } catch (e) { fail(res, e.code || 500, e.message); } };
+routes['GET /cf/search'] = cfRoute(p => {
+  const s = new URLSearchParams({ gameId: '432', classId: String(int(p.get('classId'), 1, 99999, 6)), searchFilter: String(p.get('q') || '').slice(0, 80),
+    sortField: String(int(p.get('sort'), 1, 12, 2)), sortOrder: 'desc', index: String(int(p.get('index'), 0, 9980, 0)), pageSize: String(int(p.get('pageSize'), 1, 50, 20)) });
+  if (/^[\w.-]{1,20}$/.test(p.get('gameVersion') || '')) s.set('gameVersion', p.get('gameVersion'));
+  if (CF_LOADER[p.get('loader')]) s.set('modLoaderType', String(CF_LOADER[p.get('loader')]));
+  if (/^\d{1,8}$/.test(p.get('categoryId') || '')) s.set('categoryId', p.get('categoryId'));
+  return cf('/v1/mods/search?' + s);
+});
+routes['GET /cf/categories'] = cfRoute(p => cf(`/v1/categories?gameId=432&classId=${int(p.get('classId'), 1, 99999, 6)}`));
+routes['GET /cf/mod'] = cfRoute(async p => {
+  const id = int(p.get('id'), 1, 1e9, 0);
+  const [m, d] = await Promise.all([cf(`/v1/mods/${id}`), cf(`/v1/mods/${id}/description`).catch(() => ({ data: '' }))]);
+  return { data: m.data, description: d.data || '' };
+});
+routes['GET /cf/files'] = cfRoute(p => {
+  const id = int(p.get('id'), 1, 1e9, 0);
+  const s = new URLSearchParams({ pageSize: '20' });
+  if (/^[\w.-]{1,20}$/.test(p.get('gameVersion') || '')) s.set('gameVersion', p.get('gameVersion'));
+  if (CF_LOADER[p.get('loader')]) s.set('modLoaderType', String(CF_LOADER[p.get('loader')]));
+  return cf(`/v1/mods/${id}/files?` + s);
+});
+
+// ---------------- connect Discord to your Kyoto profile (OAuth, from the launcher or website) ----------------
+// Render env: DISCORD_APP_ID (same app as the status), DISCORD_CLIENT_SECRET, and in the Discord app > OAuth2 > Redirects add
+//   https://kyoto-server.onrender.com/link/discord/callback   (or PUBLIC_URL + /link/discord/callback)
+const DISCORD_SECRET = process.env.DISCORD_CLIENT_SECRET || '';
+const PUBLIC_URL = (process.env.PUBLIC_URL || 'https://kyoto-server.onrender.com').replace(/\/$/, '');
+const discordStates = new Map(); // state -> { uuid, exp }
+routes['POST /link/discord'] = async (req, res, body, me) => {
+  if (!process.env.DISCORD_APP_ID || !DISCORD_SECRET) return fail(res, 503, 'Discord linking isn\'t set up on the server yet');
+  for (const [k, v] of discordStates) if (v.exp < Date.now()) discordStates.delete(k);
+  const state = crypto.randomBytes(16).toString('hex');
+  discordStates.set(state, { uuid: me, exp: Date.now() + 10 * 60000 });
+  const u = new URL('https://discord.com/oauth2/authorize');
+  u.search = new URLSearchParams({ client_id: process.env.DISCORD_APP_ID, response_type: 'code', scope: 'identify', state, prompt: 'none',
+    redirect_uri: PUBLIC_URL + '/link/discord/callback' }).toString();
+  send(res, 200, { url: u.toString() });
+};
+const donePage = (ok, msg) => Buffer.from(`<!doctype html><meta charset=utf-8><title>Kyoto</title><body style="margin:0;height:100vh;display:grid;place-items:center;background:#07070a;color:#fff;font-family:system-ui">
+<div style="text-align:center"><div style="font-size:42px">${ok ? '&#10003;' : '&#10007;'}</div><h2>${msg}</h2><p style="color:#9aa0aa">You can close this tab and go back to Kyoto.</p></div>`);
+routes['GET /link/discord/callback'] = async (req, res) => {
+  const p = q(req); const st = discordStates.get(p.get('state') || '');
+  discordStates.delete(p.get('state') || '');
+  if (!st || st.exp < Date.now() || !p.get('code')) return send(res, 400, donePage(false, 'That link expired, try again'), 'text/html');
+  try {
+    const tr = await fetch('https://discord.com/api/oauth2/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: process.env.DISCORD_APP_ID, client_secret: DISCORD_SECRET, grant_type: 'authorization_code', code: p.get('code'), redirect_uri: PUBLIC_URL + '/link/discord/callback' }) });
+    const tok = await tr.json();
+    if (!tok.access_token) throw new Error('no token');
+    const ur = await fetch('https://discord.com/api/users/@me', { headers: { Authorization: 'Bearer ' + tok.access_token } });
+    const du = await ur.json();
+    if (!du.id) throw new Error('no user');
+    const prof = db.profiles[st.uuid] || (db.profiles[st.uuid] = {});
+    prof.discord = { id: String(du.id), username: cleanStr(du.global_name || du.username, 40), at: Date.now() };
+    save();
+    send(res, 200, donePage(true, 'Discord connected as ' + prof.discord.username.replace(/[<>&"]/g, '')), 'text/html');
+  } catch (e) { send(res, 500, donePage(false, 'Couldn\'t connect Discord'), 'text/html'); }
+};
+
 // ---------------- staff panel (website: /mod) ----------------
 // Owners (OWNERS env var) are always staff. Owners can add moderators from the panel.
 // Moderators can: approve/reject capes, delete posts + chat, handle reports, mute, ban (not other staff), reset profiles.
@@ -985,7 +1064,10 @@ const server = http.createServer(async (req, res) => {
       const badges = ['kyoto'];
       if (isPlus(uuid)) badges.unshift('plus');
       if (isOwner) badges.unshift('owner');
-      return send(res, 200, Object.assign({ name: db.users[uuid].name, badges }, p));
+      const out = Object.assign({ name: db.users[uuid].name, badges }, p);
+      if (p.showLinks === false) out.links = [];
+      if (p.discord && p.showDiscord !== false) out.discordName = p.discord.username; delete out.discord;
+      return send(res, 200, out);
     }
     // Kyoto Blox -> your Roblox games: what someone is listening to + its synced lyrics (Kyoto Lyrics kit reads this)
     const np = /^\/blox\/np\/(\d{1,20})$/.exec(url.pathname);
@@ -1002,7 +1084,7 @@ const server = http.createServer(async (req, res) => {
     const limit = key === 'PUT /profile/media' ? 22000000 : 2500000;
     const body = (req.method === 'POST' || req.method === 'PUT') ? await readBody(req, limit) : {};
     const open = key === 'GET /' || key === 'GET /stats' || key.startsWith('POST /auth/') || key === 'POST /cosmetics/bulk'
-      || key === 'POST /blox/np' || key === 'POST /kofi' || key === 'GET /config' || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version';
+      || key === 'POST /blox/np' || key === 'POST /kofi' || key === 'GET /config' || key.startsWith('GET /cf/') || key === 'GET /link/discord/callback' || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version';
     let me = null;
     if (!open) { me = auth(req); if (!me) return fail(res, 401, 'not logged in'); }
     await handler(req, res, body, me);

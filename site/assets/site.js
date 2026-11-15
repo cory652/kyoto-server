@@ -234,7 +234,7 @@ function renderProfile(root, p, opts = {}) {
       <div class="pr-meta"><span>@${esc(p.name || '')}</span>${p.location ? `<span>${icon('pin')}${esc(p.location)}</span>` : ''}</div>
       <div class="pr-badges">${badges}</div>
       <p class="pr-bio"></p>
-      <div class="pr-links">${links}</div>
+      <div class="pr-links">${links}${p.discordName ? `<span class="pr-discord" title="Discord (verified)">${icon('discord')}${esc(p.discordName)}</span>` : ''}</div>
     </div>
     ${p.showViews !== false && p.views ? `<div class="pr-views">${icon('eye')}${Number(p.views).toLocaleString()}</div>` : ''}
     ${media.audio ? `<div class="pr-music paused"><button>${icon('play')}</button><div class="bars"><i></i><i></i><i></i></div><span>${esc((p.audioName || 'Profile music').replace(/\.(mp3|wav|ogg)$/i, ''))}</span></div>` : ''}`;

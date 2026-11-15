@@ -10,49 +10,86 @@
 <link rel="icon" href="/img/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Playfair+Display:wght@600;800&family=Silkscreen&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/site.css?v=11">
+<link rel="stylesheet" href="/assets/site.css?v=12">
+<link rel="stylesheet" href="/assets/home.css?v=1">
 </head>
 <body>
 <div id="sky"><div id="art"></div><canvas id="stars"></canvas><div class="vignette"></div><div class="grain"></div></div>
-<div id="cursor"></div>
+<div id="cur" aria-hidden="true"><i class="dot"></i><i class="ring"></i></div>
 
 <!-- ======================= NAV ======================= -->
 <header id="nav">
-  <a class="brand" href="/" data-link><img class="logo-k" src="/img/logos/logo_k_starry.png" alt=""><span>KYOTO</span><em>CLIENT</em></a>
-  <nav class="links">
-    <a href="/#features" data-link>Features</a><a href="/#screens" data-link>Screens</a><a href="/#sky-time" data-link>Sky</a>
-    <a href="/#hub" data-link>Hub</a><a href="/#profiles" data-link>Profiles</a><a href="/#download" data-link>Download</a>
-  </nav>
-  <div class="nav-right">
-    <span class="online" id="navOnline"><i></i><b>—</b> online</span>
-    <a class="btn ghost sm" href="/edit" data-link id="navEdit">Edit profile</a>
-    <a class="btn sm" href="/#download" data-link>Download</a>
+  <div class="nav-top">
+    <a class="brand" href="/" data-link><img class="logo-k" src="/img/logos/logo_k_starry.png" alt=""><span>KYOTO</span><em>CLIENT</em></a>
+    <div class="nav-right">
+      <span class="online" id="navOnline"><i></i><b>—</b> online</span>
+      <a class="nav-ico" href="/edit" data-link title="Edit your profile">__I_user__</a>
+      <a class="btn sm dl" href="/#download" data-link>__I_download__ Download</a>
+      <button class="menu-btn" id="menuBtn" aria-label="Menu"><span></span><span></span><span></span><b>Menu</b></button>
+    </div>
   </div>
+  <nav class="nav-sub">
+    <a href="/#news" data-link>News</a><a href="/#news" data-link data-tag="Update">Changelog</a><a href="/#features" data-link>Features</a>
+    <a href="/#hub" data-link>Hub</a><a href="/#profiles" data-link>Profiles</a><a href="/#faq" data-link>Support</a>
+    <a href="/#socials" data-link>Socials</a><a href="/#plus" data-link class="plus-link">Kyoto+</a>
+  </nav>
 </header>
+
+<div id="menu" hidden>
+  <div class="menu-inner">
+    <nav class="menu-links">
+      <a href="/#news" data-link>News</a><a href="/#features" data-link>Features</a><a href="/#screens" data-link>Video screens</a><a href="/#sky-time" data-link>Skies</a>
+      <a href="/#hub" data-link>Hub</a><a href="/#profiles" data-link>Profiles</a><a href="/#download" data-link>Download</a><a href="/edit" data-link>Edit profile</a>
+    </nav>
+    <div class="menu-side"><img class="logo-k" src="/img/logos/logo_k_starry.png" alt=""><p>The best client is just a mod.</p><div class="soc" id="menuSoc"></div></div>
+  </div>
+</div>
 
 <!-- ======================= LANDING ======================= -->
 <main id="page-home" class="page">
-  <section class="hero">
-    <div class="hero-badge reveal"><span class="pulse"></span>Minecraft <b id="heroMc">26.3</b> · Fabric · Free forever</div>
-    <img class="hero-logo logo-k reveal" src="/img/logos/logo_k_starry.png" alt="Kyoto">
-    <h1 class="hero-title"><span class="word w1">KYOTO</span><span class="word w2">CLIENT</span></h1>
-    <p class="hero-sub reveal">The best client is just a mod. Watch videos on screens in your world, paint your own sky, sing along to lyrics that float in front of you, and hang out with every Kyoto player.</p>
-    <div class="hero-cta reveal">
-      <a class="btn big glow" href="#download" data-scroll>__I_download__ Get Kyoto</a>
-      <a class="btn big ghost" href="#features" data-scroll>See what's inside __I_arrow__</a>
+  <section class="hero2">
+    <div class="h2-art" id="heroArt"></div>
+    <div class="h2-glow"></div>
+    <div class="h2-center">
+      <div class="h2-logo"><span class="ring r1"></span><span class="ring r2"></span><img class="logo-k" src="/img/logos/logo_k_starry.png" alt="Kyoto"></div>
+      <h1 class="h2-title"><span>KYOTO</span> <span>CLIENT</span></h1>
+      <p class="h2-sub">The best client is just a mod · Minecraft <b id="heroMc">26.3</b></p>
+      <div class="h2-cta">
+        <a class="btn big glow" href="#download" data-scroll>__I_download__ Download</a>
+        <a class="btn big plus" href="#plus" data-scroll>__I_sparkles__ Kyoto+</a>
+      </div>
+      <div class="stats">
+        <div><b data-count="online">0</b><span>playing now</span></div>
+        <div><b data-count="users">0</b><span>Kyoto players</span></div>
+        <div><b>100+</b><span>modules</span></div>
+        <div><b>0</b><span>ads, ever</span></div>
+      </div>
     </div>
-    <div class="stats reveal">
-      <div><b data-count="online">0</b><span>playing now</span></div>
-      <div><b data-count="users">0</b><span>Kyoto players</span></div>
-      <div><b>100+</b><span>modules</span></div>
-      <div><b>0</b><span>ads, ever</span></div>
-    </div>
-    <a class="scroll-hint" href="#features" data-scroll>__I_mouse__</a>
   </section>
 
-  <div class="marquee"><div class="track" id="marquee"></div></div>
+  <section class="tiles" id="tiles">
+    <a class="tile" href="#download" data-scroll style="--img:url(/media/launcher.webp)"><small>One launcher, every version</small><b>Single<br>Install</b><span>Press Play. Fabric, Fabric API and Kyoto set themselves up.</span></a>
+    <a class="tile" href="#screens" data-scroll style="--img:url(/media/base.webp)"><small>Movie night in your world</small><b>Video<br>Screens</b><span>YouTube, Twitch, Kick and more, in sync with friends.</span></a>
+    <a class="tile" href="#sky-time" data-scroll style="--img:url(/media/sky-night.webp)"><small>Galaxies, auroras, golden hour</small><b>Custom<br>Skies</b><span>Paint your own sky and pick your time of day.</span></a>
+    <a class="tile" href="#hub" data-scroll style="--img:url(/media/hub.webp)"><small>Every Kyoto player</small><b>Kyoto<br>Hub</b><span>Chat, friends, calls, shared setups and capes.</span></a>
+  </section>
 
-  <section id="features" class="section">
+  <section class="plusbar" id="plus">
+    <div class="pb-badge"><img src="/img/logos/logo_k_starry.png" alt=""><i>+</i></div>
+    <p><b>Kyoto+</b> is the optional way to support Kyoto: a gold badge next to your name in TAB, chat and nametags. Cosmetic only, everything else stays free.</p>
+    <a class="btn sm gold" id="plusBtn" href="#" target="_blank" rel="noopener">__I_sparkles__ Get Kyoto+</a>
+  </section>
+
+  <section class="newswrap" id="news">
+    <div class="news-main">
+      <div class="news-head"><h2>News</h2><div class="ntabs" id="newsTabs"></div></div>
+      <div class="news-grid" id="newsGrid"><div class="nskel big"></div><div class="nside"><div class="nskel"></div><div class="nskel"></div><div class="nskel"></div></div></div>
+    </div>
+    <aside class="socials" id="socials"><h4>Follow our socials</h4><div class="soc" id="socList"></div>
+      <div class="live"><span class="pulse"></span><b id="liveOnline">—</b> playing Kyoto right now</div></aside>
+  </section>
+
+<section id="features" class="section">
     <div class="sec-head reveal"><span class="eyebrow">Everything included</span><h2>One mod. Everything you'd install ten mods for.</h2>
       <p>Press <kbd>Right Shift</kbd> in game. Every feature is a switch, with settings behind it.</p></div>
     <div class="grid feat" id="featGrid"></div>
@@ -142,9 +179,20 @@
     <div class="faq" id="faqList"></div>
   </section>
 
-  <footer class="foot"><div><img class="logo-k" src="/img/logos/logo_k_starry.png" alt=""><b>Kyoto Client</b><span>Made by heffm</span></div>
-    <div class="foot-links"><a href="/edit" data-link>Profile editor</a><a href="#download" data-scroll>Download</a><a id="footDiscord" href="#" target="_blank" rel="noopener">Discord</a></div>
-    <button class="theme-pill" id="themePill"></button></footer>
+  <section class="cta">
+    <img class="logo-k" src="/img/logos/logo_k_starry.png" alt="">
+    <p><b>Video screens, synced lyrics, custom skies, free capes</b> and a Hub full of Kyoto players. It's completely free. What are you waiting for? Download today!</p>
+    <a class="btn big glow" href="#download" data-scroll>__I_download__ Download</a>
+  </section>
+
+  <footer class="foot2">
+    <div class="soc" id="footSoc"></div>
+    <div class="f-row"><a class="brand" href="/" data-link><img class="logo-k" src="/img/logos/logo_k_starry.png" alt=""><span>KYOTO</span></a>
+      <span class="f-copy">© <span id="year"></span> Kyoto Client</span>
+      <a href="/edit" data-link>Profile editor</a><a href="#download" data-scroll>Download</a><a href="#faq" data-scroll>Support</a><a id="footDiscord" href="#" target="_blank" rel="noopener">Discord</a>
+      <button class="theme-pill" id="themePill"></button>
+      <span class="f-legal">Not affiliated with Mojang or Microsoft.</span></div>
+  </footer>
 </main>
 
 <!-- ======================= PROFILE EDITOR ======================= -->
@@ -290,7 +338,8 @@
 <main id="page-user" class="page" hidden><div class="profile-root full" id="userRoot"></div></main>
 
 <div id="toasts"></div>
-<script src="/assets/icons.js?v=10"></script>
-<script src="/assets/site.js?v=11"></script>
+<script src="/assets/icons.js?v=12"></script>
+<script src="/assets/site.js?v=12"></script>
+<script src="/assets/home.js?v=1"></script>
 </body>
 </html>

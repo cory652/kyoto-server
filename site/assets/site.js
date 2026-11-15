@@ -5,6 +5,8 @@ const CONFIG = {
   api: /onrender\.com$|localhost|127\.0\.0\.1/.test(location.hostname) ? location.origin : 'https://kyoto-server.onrender.com',
   launcherUrl: 'https://cdn.discordapp.com/attachments/1571013133319933982/1571013394113237073/Kyoto_Launcher.exe?ex=6af92fbd&is=6af7de3d&hm=53eaec80108ab0c99fd950e26e0a9c1d051144dd82411bfd4861ce9d9bb07f8c&',   // >>> link to KyotoLauncher.exe (Discord attachment, GitHub release...) <<<
   discordUrl: '',    // >>> your Discord invite <<<
+  // >>> your socials (leave '' to hide one) <<<
+  socials: { discord: '', tiktok: '', youtube: '', twitch: '', x: '', instagram: '' },
 };
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -157,7 +159,7 @@ $('#featGrid').innerHTML = FEATURES.map(([ic, t, d, li], i) => `<div class="fcar
 $$('.fcard').forEach(c => c.addEventListener('mousemove', e => { const r = c.getBoundingClientRect(); c.style.setProperty('--mx', (e.clientX - r.left) + 'px'); c.style.setProperty('--my', (e.clientY - r.top) + 'px'); }));
 const MARQ = [['monitor', 'Video screens'], ['moon', 'Custom skies'], ['clock', 'Your own time of day'], ['music', 'Synced lyrics'], ['cape', 'Free capes'], ['users', 'Friends + DMs'],
   ['chat', 'Kyoto Hub'], ['layout', 'HUD editor'], ['zap', 'FPS boost'], ['crosshair', 'Crosshair studio'], ['sparkles', 'Seasonal themes'], ['gamepad', 'Any server'], ['rocket', 'One-click launcher']];
-const mq = MARQ.map(([i, t]) => `<span>${icon(i)}${t}</span>`).join(''); $('#marquee').innerHTML = mq + mq;
+
 
 $('#sources').innerHTML = [['youtube', 'YouTube'], ['twitch', 'Twitch'], ['kick', 'Kick'], ['globe', 'Vimeo + more'], ['film', 'Your own files']].map(([i, t]) => `<span>${icon(i)}${t}</span>`).join('');
 $('#mnTabs').innerHTML = [1, 2, 3].map(n => `<button data-mn="${n}" class="${n === 1 ? 'on' : ''}">${icon('play')} Movie night ${n}</button>`).join('');
@@ -198,7 +200,7 @@ $('#dlLauncher').onclick = e => { if (!CONFIG.launcherUrl) { e.preventDefault();
 if (CONFIG.launcherUrl) $('#dlLauncher').href = CONFIG.launcherUrl;
 
 function countUp(el, to) { const t0 = performance.now(); (function f(n) { const k = Math.min(1, (n - t0) / 1400); el.textContent = Math.round(to * (1 - (1 - k) ** 3)).toLocaleString(); if (k < 1) requestAnimationFrame(f); })(t0); }
-api('/stats', { auth: false }).then(s => { $('#navOnline b').textContent = s.online; countUp($('[data-count=online]'), s.online); countUp($('[data-count=users]'), s.users); }).catch(() => { $('#navOnline').style.display = 'none'; });
+api('/stats', { auth: false }).then(s => { $('#navOnline b').textContent = s.online; const lo = $('#liveOnline'); if (lo) lo.textContent = s.online; window.KY_STATS = s; countUp($('[data-count=online]'), s.online); countUp($('[data-count=users]'), s.users); }).catch(() => { $('#navOnline').style.display = 'none'; });
 api('/mods/list', { auth: false }).then(r => {
   const vs = r.versions || [];
   $('#jarList').innerHTML = vs.length ? vs.map(v => `<a href="${CONFIG.api}/mods/kyoto-${esc(v)}.jar">${icon('download')} Minecraft ${esc(v)}<span class="muted small">${r.files && r.files[v] ? (r.files[v].size / 1e6).toFixed(1) + ' MB' : ''}</span></a>`).join('') : '<p class="muted small">The jar is coming soon. Use the launcher.</p>';

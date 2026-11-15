@@ -756,7 +756,7 @@
   }
   async function wear() {
     if (!validate()) return; if (!me) return needLogin();
-    try { await api('/kycos', { method: 'PUT', body: { data: JSON.stringify(exportData()) } }); toast('You\'re wearing it', `${S.name} on your ${SLOT_NAMES[S.slot].toLowerCase()} · everyone with Kyoto sees it`, 'ok'); }
+    try { await api('/kycos', { method: 'PUT', body: { data: JSON.stringify(exportData()) } }); toast('You\'re wearing it', `${S.name} on your ${SLOT_NAMES[S.slot].toLowerCase()}. It shows in game within a minute (F5 to see yourself).`, 'ok'); }
     catch (e) { toast('Couldn\'t wear it', e.message, 'bad'); }
   }
   function post() {

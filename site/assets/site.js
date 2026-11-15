@@ -117,12 +117,12 @@ function route() {
   const p = location.pathname;
   const user = /^\/u\/([A-Za-z0-9_]{1,16})\/?$/.exec(p) || (new URLSearchParams(location.search).get('u') ? [0, new URLSearchParams(location.search).get('u')] : null);
   const edit = p.startsWith('/edit'), mod = p.startsWith('/mod');
-  const sub = /^\/(news|changelog|store|download|studio)(\/|$)/.exec(p);
-  const page = sub ? (sub[1] === 'changelog' ? 'news' : sub[1]) : null;
+  const sub = /^\/(news|changelog|store|cosmetics|download|studio|hub)(\/|$)/.exec(p);
+  const page = sub ? ({ changelog: 'news', cosmetics: 'store' }[sub[1]] || sub[1]) : null;
   $('#page-home').hidden = !!user || edit || mod || !!page;
-  for (const n of ['news', 'store', 'download', 'studio']) { const el = $('#page-' + n); if (el) el.hidden = page !== n; }
-  const foot = $('#siteFoot'); if (foot) foot.hidden = !!user || edit || mod;
-  document.title = { news: sub && sub[1] === 'changelog' ? 'Changelog - Kyoto Client' : 'News - Kyoto Client', store: 'Store - Kyoto Client', download: 'Download Kyoto Client', studio: 'Kyoto Studio' }[page] || 'Kyoto Client · The best client is just a mod';
+  for (const n of ['news', 'store', 'download', 'studio', 'hub']) { const el = $('#page-' + n); if (el) el.hidden = page !== n; }
+  const foot = $('#siteFoot'); if (foot) foot.hidden = !!user || edit || mod || page === 'hub';
+  document.title = { news: sub && sub[1] === 'changelog' ? 'Changelog - Kyoto Client' : 'News - Kyoto Client', store: 'Cosmetics - Kyoto Client', hub: 'Kyoto Hub', download: 'Download Kyoto Client', studio: 'Kyoto Studio' }[page] || 'Kyoto Client · The best client is just a mod';
   if (page && window.openPage) window.openPage(page, p);
   $('#page-edit').hidden = !edit;
   $('#page-mod').hidden = !mod;

@@ -917,7 +917,7 @@
   function makeCape() {
     if (!capeSrcFrames) return;
     const f0 = capeSrcFrames[0], many = capeSrcFrames.length > 1;
-    const R = clamp(Math.ceil(Math.max(f0.width / 10, f0.height / 16)), 1, many ? 4 : 16);
+    const R = clamp(Math.ceil(Math.max(f0.width / 10, f0.height / 16)), 1, many ? 6 : 16);
     const W = 64 * R, H = 32 * R, out = document.createElement('canvas');
     out.width = W; out.height = H * capeSrcFrames.length;
     const g = out.getContext('2d');
@@ -963,6 +963,12 @@
     } catch (e) { toast('Couldn\'t set the cape', e.message, 'bad'); }
   };
   $('#capePost').onclick = async () => {
+    if (!me) return needLogin();
+    const b = await capePng(); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = (capeName || 'cape') + (capeFrames > 1 ? '.gif' : '.png'); a.click();
+    modal(`<h2>Post your cape to the Store</h2><p>Your cape file just downloaded in Minecraft's cape layout (HD). Open the Store, press <b>Post a cosmetic</b>, choose <b>Cape</b> and pick that file.</p>
+      <div class="mrow"><button class="pri ghost" data-close>Later</button><a class="pri" href="/store?sell=1" target="_blank" style="text-decoration:none">Open the Store</a></div>`);
+  };
+  const _oldCapePost = async () => {
     if (!me) return needLogin();
     const title = prompt('Name your cape', capeName.replace(/_/g, ' ')); if (title === null) return;
     try {
@@ -1051,15 +1057,11 @@
   }
   function post() {
     if (!validate()) return; if (!me) return needLogin();
-    modal(`<h2>Post to the Kyoto Hub</h2><p>Other players can equip it from the Hub and the launcher's Store.</p>
-      <label>Name<input id="pTitle" maxlength="40" value="${esc(S.name)}"></label><label>Description<textarea id="pText" maxlength="300" rows="3" placeholder="What is it?"></textarea></label>
-      <div class="mrow"><button class="pri ghost" data-close>Cancel</button><button class="pri" id="pGo">Post</button></div>`);
-    $('#pGo').onclick = async () => {
-      try {
-        const r = await api('/hub/post', { method: 'POST', body: { type: 'kycos', title: $('#pTitle').value.trim(), text: $('#pText').value.trim(), data: JSON.stringify(exportData()) } });
-        closeModal(); toast(r.pending ? 'Sent for approval' : 'Posted!', r.pending ? 'A Kyoto mod will check it soon.' : 'It\'s live in the Hub.', 'ok');
-      } catch (e) { toast('Couldn\'t post', e.message, 'bad'); }
-    };
+    // the .kycos file is only for posting: save it, then open the Store's post form
+    exportFile();
+    modal(`<h2>Post it to the Kyoto Store</h2><p>Your <b>.kycos</b> file just downloaded. On the Store page, add a name, description, price (or free) and a few photos of it in game, then pick that file.</p>
+      <ol class="steps2"><li>Wear it first (<b>Wear</b> button) and take screenshots in game with F5 + F2.</li><li>Open the Store and press <b>Post a cosmetic</b>.</li><li>Pick the .kycos file + your screenshots.</li></ol>
+      <div class="mrow"><button class="pri ghost" data-close>Later</button><a class="pri" href="/store?sell=1" target="_blank" style="text-decoration:none">Open the Store</a></div>`);
   }
   function help() {
     modal(`<h2>How the builder works</h2><ul>

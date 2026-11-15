@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Playfair+Display:wght@600;800&family=Silkscreen&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/site.css?v=12">
-<link rel="stylesheet" href="/assets/home.css?v=3">
+<link rel="stylesheet" href="/assets/home.css?v=4">
 </head>
 <body>
 <div id="sky"><div id="art"></div><canvas id="stars"></canvas><div class="vignette"></div><div class="grain"></div></div>
@@ -37,8 +37,8 @@
     </div>
   </div>
   <nav class="nav-sub">
-    <a href="/news" data-link>News</a><a href="/changelog" data-link>Changelog</a><a href="/#features" data-link>Features</a><a href="/store" data-link>Store</a><a href="/studio" data-link>Studio</a>
-    <a href="/#hub" data-link>Hub</a><a href="/download#faq" data-link>Support</a>
+    <a href="/news" data-link>News</a><a href="/changelog" data-link>Changelog</a><a href="/#features" data-link>Features</a><a href="/store" data-link>Cosmetics</a><a href="/studio" data-link>Studio</a>
+    <a href="/hub" data-link>Hub</a><a href="/download#faq" data-link>Support</a>
     <a href="/#socials" data-link>Socials</a><a href="/#plus" data-link class="plus-link">Kyoto+</a>
   </nav>
 </header>
@@ -46,7 +46,7 @@
 <div id="menu" hidden>
   <div class="menu-inner">
     <nav class="menu-links">
-      <a href="/news" data-link>News</a><a href="/changelog" data-link>Changelog</a><a href="/#features" data-link>Features</a><a href="/store" data-link>Store</a>
+      <a href="/news" data-link>News</a><a href="/changelog" data-link>Changelog</a><a href="/#features" data-link>Features</a><a href="/store" data-link>Cosmetics</a><a href="/hub" data-link>Hub</a>
       <a href="/studio" data-link>Kyoto Studio</a><a href="/download" data-link>Download</a><a href="/download#faq" data-link>Support</a><a href="/edit" data-link>Edit profile</a>
     </nav>
     <div class="menu-side"><img class="logo-k" src="/img/logos/logo_k_starry.png" alt=""><p>The best client is just a mod.</p><div class="soc" id="menuSoc"></div></div>
@@ -186,12 +186,39 @@
 
 <!-- ======================= STORE ======================= -->
 <main id="page-store" class="page subpage" hidden>
-  <header class="phero"><span class="eyebrow">Store</span><h1>Community cosmetics</h1><p>Capes and builds made by Kyoto players in Kyoto Studio. Every one of them is free to wear.</p>
-    <div class="phero-acts"><a class="btn glow" href="/studio" data-link>__I_sparkles__ Make your own</a><span class="coinpill">__I_coin__ Coins are coming soon</span></div></header>
-  <div class="sbar"><div class="ntabs big" id="storeKinds"><button class="on" data-sk="all">Everything</button><button data-sk="kycos">Builds</button><button data-sk="cape">Capes</button></div>
-    <div class="ntabs" id="storeSort"><button class="on" data-ss="top">Top</button><button data-ss="new">New</button></div></div>
+  <header class="phero cos-hero"><span class="eyebrow">Cosmetics</span><h1>Capes &amp; cosmetics</h1><p>Get anything here and it goes straight to your Kyoto account. Wear it in game, no downloads, and every Kyoto player sees it.</p>
+    <div class="phero-acts"><button class="btn glow" id="cosSell">__I_plus__ Post a cosmetic</button><a class="btn ghost" href="/studio" data-link>__I_sparkles__ Make one in Kyoto Studio</a><span class="coinpill" id="cosCoins">__I_coin__ <b>0</b> coins</span></div></header>
+  <div class="sbar">
+    <div class="ntabs big" id="cosView"><button class="on" data-cv="browse">Browse</button><button data-cv="locker">My Locker</button></div>
+    <div class="sbar-r"><div class="ntabs" id="storeKinds"><button class="on" data-sk="all">Everything</button><button data-sk="kycos">Cosmetics</button><button data-sk="cape">Capes</button></div>
+      <div class="ntabs" id="storeSort"><button class="on" data-ss="top">Top</button><button data-ss="new">New</button><button data-ss="owned">Popular</button></div></div></div>
   <section class="sgrid" id="storeGrid"></section>
 </main>
+
+<!-- ======================= HUB ======================= -->
+<main id="page-hub" class="page subpage hubpage" hidden>
+  <div class="hub">
+    <aside class="hub-rail">
+      <div class="hub-brand"><img src="/img/logos/logo_k_starry.png" alt=""><div><b>Kyoto Hub</b><small id="hubOnline">Every Kyoto player</small></div></div>
+      <button class="hr on" data-ht="chat">__I_chat__<span>Chat</span></button>
+      <button class="hr" data-ht="dms">__I_users__<span>DMs</span><i class="dot" id="dmDot" hidden></i></button>
+      <button class="hr" data-ht="mods" id="hrMods" hidden>__I_shield__<span>Mods</span><i class="dot" id="modDot" hidden></i></button>
+      <div class="hub-threads" id="hubThreads" hidden></div>
+      <div class="hub-me" id="hubMe"></div>
+    </aside>
+    <section class="hub-main">
+      <header class="hub-top"><div><h2 id="hubTitle"># chat</h2><small id="hubSub">Talk with every Kyoto player, in game, here and on Discord.</small></div><div class="hub-top-r" id="hubTopR"></div></header>
+      <div class="hub-feed" id="hubFeed"></div>
+      <form class="hub-compose" id="hubCompose" autocomplete="off">
+        <label class="hc-attach" title="Send a picture">__I_image__<input type="file" id="hubFile" accept="image/png,image/jpeg,image/gif,image/webp" hidden></label>
+        <div class="hc-box"><div class="hc-preview" id="hubPreview" hidden></div><input id="hubInput" maxlength="300" placeholder="Message #chat"></div>
+        <button class="hc-send" title="Send">__I_arrow__</button>
+      </form>
+      <div class="hub-login" id="hubLogin" hidden><h3>Log in to chat</h3><p>Type <code>/kyoto link</code> in game to get a code, then log in. You stay logged in on this device.</p><a class="btn glow" href="/edit" data-link>Log in</a></div>
+    </section>
+  </div>
+</main>
+<div class="lightbox" id="lightbox" hidden><img alt=""></div>
 
 <!-- ======================= DOWNLOAD ======================= -->
 <main id="page-download" class="page subpage" hidden>
@@ -228,7 +255,7 @@
   <header class="studio-hero">
     <div class="sh-text"><span class="eyebrow">Kyoto Studio</span><h1>Make skins. Build cosmetics.<br><span class="grad">Wear them in seconds.</span></h1>
       <p>A free 3D editor in your browser: paint your Minecraft skin pixel by pixel, build hats, wings and backpacks out of voxels, turn any GIF into an animated cape, and post it all to the Kyoto Hub.</p>
-      <div class="phero-acts"><a class="btn big glow" href="/builder">__I_sparkles__ Open Kyoto Studio</a><a class="btn big ghost" href="/store" data-link>Browse the Store</a></div></div>
+      <div class="phero-acts"><a class="btn big glow" href="/builder">__I_sparkles__ Open Kyoto Studio</a><a class="btn big ghost" href="/store" data-link>Browse cosmetics</a></div></div>
     <div class="sh-art"><img src="/media/studio.webp" alt="Kyoto Studio" loading="lazy"></div>
   </header>
   <section class="sfeat">
@@ -252,7 +279,7 @@
     <div class="soc" id="footSoc"></div>
     <div class="f-row"><a class="brand" href="/" data-link><img class="logo-k" src="/img/logos/logo_k_starry.png" alt=""><span>KYOTO</span></a>
       <span class="f-copy">© <span id="year"></span> Kyoto Client</span>
-      <a href="/edit" data-link>Profile editor</a><a href="/download" data-link>Download</a><a href="/news" data-link>News</a><a href="/store" data-link>Store</a><a href="/studio" data-link>Kyoto Studio</a><a href="/download#faq" data-link>Support</a><a id="footDiscord" href="#" target="_blank" rel="noopener">Discord</a>
+      <a href="/edit" data-link>Profile editor</a><a href="/download" data-link>Download</a><a href="/news" data-link>News</a><a href="/store" data-link>Cosmetics</a><a href="/hub" data-link>Hub</a><a href="/studio" data-link>Kyoto Studio</a><a href="/download#faq" data-link>Support</a><a id="footDiscord" href="#" target="_blank" rel="noopener">Discord</a>
       <button class="theme-pill" id="themePill"></button>
       <span class="f-legal">Not affiliated with Mojang or Microsoft.</span></div>
   </footer>
@@ -401,8 +428,9 @@
 
 <div id="toasts"></div>
 <script src="/assets/icons.js?v=12"></script>
-<script src="/assets/site.js?v=14"></script>
+<script src="/assets/site.js?v=15"></script>
 <script src="/assets/home.js?v=2"></script>
-<script src="/assets/pages.js?v=1"></script>
+<script src="/assets/pages.js?v=2"></script>
+<script src="/assets/hub.js?v=1"></script>
 </body>
 </html>

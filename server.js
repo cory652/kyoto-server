@@ -105,7 +105,7 @@ function readSigned(tok) {
 function auth(req) {
   const m = /^Bearer (.+)$/.exec(req.headers.authorization || '');
   // <img> tags can't send headers: the staff panel passes ?auth=<token> for Hub images only
-  const qa = !m && req.method === 'GET' && req.url.startsWith('/hub/image') ? new URL(req.url, 'http://x').searchParams.get('auth') : null;
+  const qa = !m && req.method === 'GET' && (req.url.startsWith('/hub/image') || req.url.startsWith('/dm/img') || req.url.startsWith('/store/photo')) ? new URL(req.url, 'http://x').searchParams.get('auth') : null;
   if (!m && !qa) return null;
   const tok = m ? m[1] : qa;
   const t = db.tokens[tok];
@@ -227,7 +227,7 @@ const routes = {
       const isPng = buf.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
       const isGif = buf.slice(0, 3).toString() === 'GIF';
       if (!isPng && !isGif) return fail(res, 400, 'Cape must be a PNG or GIF');
-      if (buf.length > 1500000) return fail(res, 400, 'Cape file is too big (max 1.5 MB)');
+      if (buf.length > 4000000) return fail(res, 400, 'Cape file is too big (max 4 MB)');
       fs.writeFileSync(path.join(CAPES, me.replace(/[^a-f0-9-]/g, '')), buf);
       c.hasCape = true; c.capeType = isGif ? 'gif' : 'png';
     }
@@ -363,7 +363,7 @@ routes['POST /web/logout'] = async (req, res, body, me) => {
 };
 routes['GET /me'] = async (req, res, body, me) => {
   const u = db.users[me] || {};
-  send(res, 200, { uuid: me, name: u.name, owner: OWNERS.includes(String(u.name || '').toLowerCase()), staff: isStaff(me), plus: isPlus(me), plusUntil: (db.plus[me] || {}).until || 0, profile: db.profiles[me] || {} });
+  send(res, 200, { uuid: me, name: u.name, owner: OWNERS.includes(String(u.name || '').toLowerCase()), staff: isStaff(me), plus: isPlus(me), plusUntil: (db.plus[me] || {}).until || 0, coins: (db.coins || {})[me] || 0, profile: db.profiles[me] || {} });
 };
 
 // ---------------- Kyoto jars for the launcher (put files in ./jars as kyoto-<mc version>.jar) ----------------
@@ -447,7 +447,8 @@ function checkText(res, me, text) {
   return true;
 }
 const pub = (p, me) => ({ id: p.id, type: p.type, slot: p.slot, uuid: p.uuid, name: nameOf(p.uuid), title: p.title, text: p.text, at: p.at,
-  likes: p.likes.length, liked: p.likes.includes(me), hasImage: !!p.image, pending: !!p.pending, owner: isOwnerUuid(p.uuid) });
+  likes: p.likes.length, liked: p.likes.includes(me), hasImage: !!p.image, pending: !!p.pending, owner: isOwnerUuid(p.uuid),
+  price: p.price || 0, desc: p.desc || '', photos: (p.photos || []).length });
 const q = req => new URL(req.url, 'http://x').searchParams;
 
 routes['GET /hub/posts'] = async (req, res, body, me) => {
@@ -512,17 +513,92 @@ routes['POST /hub/report'] = async (req, res, body, me) => {
   if (H.reports.length > 500) H.reports.shift();
   save(); send(res, 200, { ok: true });
 };
+const chatOut = (m, me) => m.src === 'discord'
+  ? { id: m.id, discord: true, name: m.dname, avatar: m.davatar || '', text: m.text, img: m.img || null, at: m.at }
+  : { id: m.id, uuid: m.uuid, name: nameOf(m.uuid), owner: isOwnerUuid(m.uuid), staff: isStaff(m.uuid), plus: isPlus(m.uuid), text: m.text || '', img: m.img || null, at: m.at, me: m.uuid === me };
 routes['GET /chat'] = async (req, res, body, me) => {
   const since = Number(q(req).get('since')) || 0;
-  send(res, 200, { messages: H.chat.filter(m => m.at > since).slice(-80).map(m => Object.assign({ name: nameOf(m.uuid), owner: isOwnerUuid(m.uuid) }, m)) });
+  send(res, 200, { messages: H.chat.filter(m => m.at > since).slice(-100).map(m => chatOut(m, me)) });
 };
+function pushChat(m) {
+  H.chat.push(m);
+  while (H.chat.length > 400) { const old = H.chat.shift(); if (old.img) try { fs.unlinkSync(path.join(HUB_IMG, 'c' + old.img)); } catch (e) { /* gone */ } }
+  save();
+}
 routes['POST /chat/send'] = async (req, res, body, me) => {
-  const text = clean(body.text, 200);
+  const text = clean(body.text, 300);
   if (!text || !checkText(res, me, text)) return text ? undefined : fail(res, 400, 'Empty');
   if (slowmode(me + 'chat', 1500)) return fail(res, 429, 'Slow down');
-  H.chat.push({ id: H.seq++, uuid: me, text, at: Date.now() }); if (H.chat.length > 300) H.chat.shift();
-  save(); send(res, 200, { ok: true });
+  const m = { id: H.seq++, uuid: me, text, at: Date.now() };
+  pushChat(m); toDiscord(m);
+  send(res, 200, { ok: true });
 };
+// Pictures in Hub chat: PNG/JPG/GIF/WEBP up to 3 MB, one every 20 s. Mods can delete them; anyone can report them.
+routes['POST /chat/image'] = async (req, res, body, me) => {
+  if (!checkText(res, me, String(body.text || ''))) return;
+  if (slowmode(me + 'chatimg', 20000)) return fail(res, 429, 'One picture every 20 seconds');
+  const buf = Buffer.from(String(body.image || ''), 'base64'), kind = imgKind(buf);
+  if (!kind) return fail(res, 400, 'PNG, JPG, GIF or WEBP only');
+  if (buf.length > 3000000) return fail(res, 413, 'Max 3 MB');
+  const img = crypto.randomBytes(9).toString('hex');
+  fs.writeFileSync(path.join(HUB_IMG, 'c' + img), buf);
+  const m = { id: H.seq++, uuid: me, text: clean(body.text, 300), img, at: Date.now() };
+  pushChat(m); toDiscord(m);
+  send(res, 200, { ok: true });
+};
+routes['GET /chat/img'] = async (req, res) => {
+  const id = String(q(req).get('id') || ''); if (!/^[a-f0-9]{18}$/.test(id)) return fail(res, 400, 'bad id');
+  if (!H.chat.some(m => m.img === id)) return fail(res, 404, 'deleted');
+  const f = path.join(HUB_IMG, 'c' + id); if (!fs.existsSync(f)) return fail(res, 404, 'gone');
+  const buf = fs.readFileSync(f), k = imgKind(buf);
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  send(res, 200, buf, k === 'png' ? 'image/png' : k === 'gif' ? 'image/gif' : k === 'webp' ? 'image/webp' : 'image/jpeg');
+};
+
+// ---------------- Discord bridge ----------------
+// Hub -> Discord: DISCORD_WEBHOOK (the webhook URL, kept only here on the server).
+// Discord -> Hub: DISCORD_BOT_TOKEN + DISCORD_CHANNEL_ID (a bot in your server with "Message Content Intent" on).
+const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK || '';
+const DISCORD_BOT = process.env.DISCORD_BOT_TOKEN || '';
+const DISCORD_CHANNEL = process.env.DISCORD_CHANNEL_ID || '';
+const webhookId = (/webhooks\/(\d+)\//.exec(DISCORD_WEBHOOK) || [])[1] || '';
+function toDiscord(m) {
+  if (!DISCORD_WEBHOOK || m.src === 'discord') return;
+  const content = (m.text || '') + (m.img ? `\n${PUBLIC_URL}/chat/img?id=${m.img}` : '');
+  if (!content.trim()) return;
+  fetch(DISCORD_WEBHOOK + '?wait=false', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: nameOf(m.uuid) + ' (Kyoto)', avatar_url: `https://mc-heads.net/avatar/${m.uuid}/64`, content: content.slice(0, 1900), allowed_mentions: { parse: [] } }) })
+    .catch(e => console.warn('discord webhook', e.message));
+}
+let discordAfter = db.discordAfter || '';
+async function pollDiscord() {
+  if (!DISCORD_BOT || !DISCORD_CHANNEL) return;
+  try {
+    const r = await fetch(`https://discord.com/api/v10/channels/${DISCORD_CHANNEL}/messages?limit=20${discordAfter ? '&after=' + discordAfter : ''}`, { headers: { Authorization: 'Bot ' + DISCORD_BOT } });
+    if (!r.ok) { if (r.status !== 429) console.warn('discord poll', r.status); return; }
+    const msgs = (await r.json()).sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1));
+    const first = !discordAfter;
+    for (const d of msgs) {
+      discordAfter = d.id;
+      if (first) continue; // don't replay old history on the first run
+      if (d.webhook_id && d.webhook_id === webhookId) continue; // our own Hub messages
+      if (d.author && d.author.bot) continue;
+      let text = String(d.content || '').replace(/<a?:(\w+):\d+>/g, ':$1:').replace(/<@!?\d+>/g, '@someone').replace(/[\u0000-\u001f]/g, ' ').slice(0, 300);
+      if (blocked(text)) continue;
+      const att = (d.attachments || []).find(a => /^image\//.test(a.content_type || '') && a.size < 3000000);
+      let img = null;
+      if (att) {
+        try { const buf = Buffer.from(await (await fetch(att.url)).arrayBuffer()); if (imgKind(buf)) { img = crypto.randomBytes(9).toString('hex'); fs.writeFileSync(path.join(HUB_IMG, 'c' + img), buf); } } catch (e) { /* skip picture */ }
+      }
+      if (!text && !img) continue;
+      const a = d.author || {};
+      pushChat({ id: H.seq++, src: 'discord', dname: (a.global_name || a.username || 'Discord').slice(0, 32), davatar: a.avatar ? `https://cdn.discordapp.com/avatars/${a.id}/${a.avatar}.png?size=64` : '', text, img, at: Date.now() });
+    }
+    if (db.discordAfter !== discordAfter) { db.discordAfter = discordAfter; save(); }
+  } catch (e) { console.warn('discord poll', e.message); }
+}
+if (DISCORD_BOT && DISCORD_CHANNEL) { setInterval(pollDiscord, 4000); console.log('Discord -> Hub bridge on'); }
+if (DISCORD_WEBHOOK) console.log('Hub -> Discord bridge on');
 const dmKey = (a, b) => [a, b].sort().join(':');
 routes['GET /dm/threads'] = async (req, res, body, me) => {
   const threads = [];
@@ -964,12 +1040,121 @@ routes['GET /mcskin'] = async (req, res) => {
 };
 
 // ---------------- public Store (website /store): approved community capes + builds, no login needed to look ----------------
-routes['GET /store/items'] = async (req, res) => {
-  const top = q(req).get('sort') !== 'new';
-  const list = H.posts.filter(p => !p.pending && ((p.type === 'cape' && p.image) || p.type === 'kycos'))
-    .sort(top ? (a, b) => b.likes.length - a.likes.length || b.at - a.at : (a, b) => b.at - a.at).slice(0, 120)
-    .map(p => ({ id: p.id, type: p.type, title: p.title, name: p.name, likes: p.likes.length, slot: p.slot || '', at: p.at, gif: p.image === 'gif' }));
-  send(res, 200, { items: list });
+const isListing = p => (p.type === 'cape' && p.image) || p.type === 'kycos';
+db.lib = db.lib || {};       // uuid -> [item ids you own]
+db.coins = db.coins || {};   // uuid -> coins
+const owns = (u, id) => !!u && (db.lib[u] || []).includes(id);
+const storeOut = (p, me) => ({ id: p.id, type: p.type, title: p.title, name: nameOf(p.uuid), creator: nameOf(p.uuid), desc: p.desc || p.text || '',
+  price: p.price || 0, photos: (p.photos || []).length, likes: p.likes.length, liked: !!me && p.likes.includes(me), slot: p.slot || (p.type === 'cape' ? 'cape' : ''),
+  at: p.at, gif: p.image === 'gif', owned: owns(me, p.id) || p.uuid === me, owners: p.owners || 0, pending: !!p.pending,
+  wearing: !!me && (p.type === 'cape' ? (db.cosmetics[me] || {}).capeItem === p.id && !!(db.cosmetics[me] || {}).hasCape : !!(db.kycos[me] && db.kycos[me].items && db.kycos[me].items[p.slot] === p.id)) });
+routes['GET /store/items'] = async (req, res, body, me) => {
+  const sort = q(req).get('sort') || 'top';
+  const mine = q(req).get('mine') === '1';
+  const list = H.posts.filter(p => isListing(p) && (!p.pending || (me && p.uuid === me)) && (!mine || p.uuid === me || owns(me, p.id)))
+    .sort(sort === 'new' ? (a, b) => b.at - a.at : sort === 'owned' ? (a, b) => (b.owners || 0) - (a.owners || 0) : (a, b) => b.likes.length - a.likes.length || b.at - a.at).slice(0, 200)
+    .map(p => storeOut(p, me));
+  send(res, 200, { items: list, coins: me ? (db.coins[me] || 0) : null });
+};
+routes['GET /store/item'] = async (req, res, body, me) => {
+  const p = H.posts.find(x => x.id === Number(q(req).get('id')) && isListing(x) && (!x.pending || x.uuid === me || isStaff(me)));
+  if (!p) return fail(res, 404, 'That item is gone');
+  send(res, 200, storeOut(p, me));
+};
+routes['GET /store/photo'] = async (req, res, body, me) => {
+  const p = H.posts.find(x => x.id === Number(q(req).get('id')) && isListing(x));
+  const n = Number(q(req).get('n')) || 0;
+  if (!p || !p.photos || !p.photos[n] || (p.pending && p.uuid !== me && !isStaff(me))) return fail(res, 404, 'no photo');
+  const f = path.join(HUB_IMG, p.photos[n]); if (!fs.existsSync(f)) return fail(res, 404, 'no photo');
+  const buf = fs.readFileSync(f);
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  send(res, 200, buf, buf[0] === 0x89 ? 'image/png' : buf[0] === 0x47 ? 'image/gif' : buf[0] === 0x52 ? 'image/webp' : 'image/jpeg');
+};
+function imgKind(buf) {
+  if (buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50) return 'png';
+  if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8) return 'jpg';
+  if (buf.length > 3 && buf.slice(0, 3).toString() === 'GIF') return 'gif';
+  if (buf.length > 12 && buf.slice(0, 4).toString() === 'RIFF' && buf.slice(8, 12).toString() === 'WEBP') return 'webp';
+  return null;
+}
+// Create a Store listing (website): name, description, price (coins, 0 = free), up to 4 photos, and either a .kycos build or a cape image.
+routes['POST /store/listing'] = async (req, res, body, me) => {
+  if (isBanned(me)) return fail(res, 403, 'Banned');
+  const type = body.type === 'cape' ? 'cape' : 'kycos';
+  const title = clean(body.name, 40), desc = clean(body.desc, 600);
+  if (!title) return fail(res, 400, 'Give it a name');
+  if (!checkText(res, me, title + ' ' + desc)) return;
+  if (!isStaff(me) && slowmode(me + 'listing', 20000)) return fail(res, 429, 'Wait a few seconds between listings');
+  const price = Math.max(0, Math.min(100000, Math.round(Number(body.price) || 0)));
+  const post = { id: H.seq++, type, uuid: me, title, text: desc, desc, price, at: Date.now(), likes: [], owners: 0, photos: [] };
+  if (type === 'kycos') {
+    const k = checkKycos(body.data);
+    if (k.error) return fail(res, 400, k.error);
+    post.data = k.json; post.slot = k.slot;
+  } else {
+    const buf = Buffer.from(String(body.image || ''), 'base64'), kind = imgKind(buf);
+    if (kind !== 'png' && kind !== 'gif') return fail(res, 400, 'Capes must be a PNG or GIF (make one from any picture on the Kyoto Studio page)');
+    if (buf.length > 4000000) return fail(res, 400, 'Cape is too big (max 4 MB)');
+    post.image = kind;
+    fs.writeFileSync(path.join(HUB_IMG, String(post.id)), buf);
+  }
+  for (const [i, b64] of (Array.isArray(body.photos) ? body.photos : []).slice(0, 4).entries()) {
+    const buf = Buffer.from(String(b64 || ''), 'base64'), kind = imgKind(buf);
+    if (!kind || buf.length > 2500000) return fail(res, 400, `Photo ${i + 1} must be a PNG, JPG, GIF or WEBP under 2.5 MB`);
+    const id = `p${post.id}_${i}`; fs.writeFileSync(path.join(HUB_IMG, id), buf); post.photos.push(id);
+  }
+  post.pending = REQUIRE_APPROVAL && !isStaff(me);
+  H.posts.push(post);
+  (db.lib[me] = db.lib[me] || []).push(post.id); // you always own what you made
+  save(); send(res, 200, { ok: true, id: post.id, pending: post.pending });
+};
+// "Get" an item: it goes into your Kyoto account (your Locker), no downloads.
+routes['POST /store/get'] = async (req, res, body, me) => {
+  const p = H.posts.find(x => x.id === Number(body.id) && isListing(x) && !x.pending);
+  if (!p) return fail(res, 404, 'That item is gone');
+  const lib = db.lib[me] = db.lib[me] || [];
+  if (lib.includes(p.id) || p.uuid === me) return send(res, 200, { ok: true, owned: true, coins: db.coins[me] || 0 });
+  const price = p.price || 0;
+  if (price > 0) {
+    if ((db.coins[me] || 0) < price) return fail(res, 402, `You need ${price} coins (you have ${db.coins[me] || 0})`);
+    db.coins[me] -= price;
+    db.coins[p.uuid] = (db.coins[p.uuid] || 0) + Math.floor(price * 0.8); // the creator gets 80%
+  }
+  lib.push(p.id); p.owners = (p.owners || 0) + 1;
+  save(); send(res, 200, { ok: true, owned: true, coins: db.coins[me] || 0 });
+};
+// Your Locker: everything you own, and what you're wearing.
+routes['GET /library'] = async (req, res, body, me) => {
+  const ids = new Set(db.lib[me] || []);
+  const items = H.posts.filter(p => isListing(p) && (ids.has(p.id) || p.uuid === me)).map(p => storeOut(p, me));
+  send(res, 200, { items: items.sort((a, b) => b.at - a.at), coins: db.coins[me] || 0 });
+};
+routes['POST /library/wear'] = async (req, res, body, me) => {
+  const p = H.posts.find(x => x.id === Number(body.id) && isListing(x));
+  if (!p) return fail(res, 404, 'That item is gone');
+  if (!owns(me, p.id) && p.uuid !== me) return fail(res, 403, 'Get it from the Store first');
+  if (p.pending && p.uuid !== me) return fail(res, 403, 'Still waiting for approval');
+  if (p.type === 'kycos') {
+    const k = db.kycos[me] || (db.kycos[me] = { slots: {}, version: 0 });
+    k.slots[p.slot] = JSON.parse(p.data); k.items = k.items || {}; k.items[p.slot] = p.id; k.version = Date.now();
+  } else {
+    const c = db.cosmetics[me] || (db.cosmetics[me] = { hasCape: false, capeType: 'png', accessory: 0 });
+    fs.copyFileSync(path.join(HUB_IMG, String(p.id)), path.join(CAPES, me.replace(/[^a-f0-9-]/g, '')));
+    c.hasCape = true; c.capeType = p.image === 'gif' ? 'gif' : 'png'; c.capeItem = p.id; c.version = Date.now();
+  }
+  save(); send(res, 200, { ok: true, slot: p.type === 'cape' ? 'cape' : p.slot });
+};
+routes['POST /library/unwear'] = async (req, res, body, me) => {
+  const slot = String(body.slot || '');
+  if (slot === 'cape') { const c = db.cosmetics[me]; if (c) { c.hasCape = false; c.capeItem = 0; c.version = Date.now(); } }
+  else { const k = db.kycos[me]; if (k) { delete k.slots[slot]; if (k.items) delete k.items[slot]; k.version = Date.now(); } }
+  save(); send(res, 200, { ok: true });
+};
+routes['POST /mod/coins'] = async (req, res, body, me) => {
+  if (!ownerOnly(res, me)) return;
+  const u = byName(body.name); if (!u) return fail(res, 404, 'No Kyoto player with that name');
+  db.coins[u] = Math.max(0, (db.coins[u] || 0) + Math.round(Number(body.amount) || 0));
+  audit(me, 'coins', nameOf(u), String(body.amount)); save(); send(res, 200, { ok: true, coins: db.coins[u] });
 };
 routes['GET /store/image'] = async (req, res) => {
   const p = H.posts.find(x => x.id === Number(q(req).get('id')) && x.type === 'cape' && !x.pending && x.image);
@@ -1001,7 +1186,7 @@ function canPunish(res, me, u) {
   return true;
 }
 function reportTarget(r) {
-  if (r.kind === 'chat') { const m = H.chat.find(x => String(x.id) === String(r.id)); return m ? { name: nameOf(m.uuid), text: m.text, gone: false } : { gone: true }; }
+  if (r.kind === 'chat') { const m = H.chat.find(x => String(x.id) === String(r.id)); return m ? { name: m.uuid ? nameOf(m.uuid) : m.dname + ' (Discord)', text: m.text, chatImg: m.img || null, gone: false } : { gone: true }; }
   if (r.kind === 'user' || r.kind === 'profile') { const u = byName(r.id); return { name: u ? nameOf(u) : r.id, text: u && db.profiles[u] ? (db.profiles[u].bio || '') : '', gone: !u }; }
   const p = H.posts.find(x => String(x.id) === String(r.id));
   return p ? { name: nameOf(p.uuid), text: [p.title, p.text].filter(Boolean).join(' - '), image: p.image ? p.id : null, type: p.type, gone: false } : { gone: true };
@@ -1037,10 +1222,12 @@ routes['POST /mod/delete'] = async (req, res, body, me) => {
   if (!staffOnly(res, me)) return;
   if (body.kind === 'chat') {
     const m = H.chat.find(x => String(x.id) === String(body.id)); if (!m) return fail(res, 404, 'Already gone');
-    H.chat = H.chat.filter(x => x !== m); audit(me, 'delete chat', nameOf(m.uuid), m.text);
+    H.chat = H.chat.filter(x => x !== m); audit(me, 'delete chat', m.uuid ? nameOf(m.uuid) : m.dname + ' (Discord)', m.text || '[picture]');
+    if (m.img) try { fs.unlinkSync(path.join(HUB_IMG, 'c' + m.img)); } catch (e) { /* gone */ }
   } else {
     const p = H.posts.find(x => String(x.id) === String(body.id)); if (!p) return fail(res, 404, 'Already gone');
     H.posts = H.posts.filter(x => x !== p); try { fs.unlinkSync(path.join(HUB_IMG, String(p.id))); } catch (e) { /* none */ }
+    for (const ph of p.photos || []) try { fs.unlinkSync(path.join(HUB_IMG, ph)); } catch (e) { /* none */ }
     audit(me, p.pending ? 'reject' : 'delete post', nameOf(p.uuid), p.title || p.text);
   }
   H.reports = H.reports.filter(r => !(String(r.id) === String(body.id) && (r.kind === 'chat') === (body.kind === 'chat')));
@@ -1124,7 +1311,7 @@ const SITE_TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; cha
 function serveSite(req, res, pathname) {
   // pretty URLs: /edit, /u/<name>, /download, /features -> the single page app
   let rel = decodeURIComponent(pathname);
-  if (rel === '/' || /^\/(edit|mod|u\/[A-Za-z0-9_]{1,16}|download|features|profile|news|news\/[\w-]{1,40}|changelog|store|studio)\/?$/.test(rel)) rel = '/index.html';
+  if (rel === '/' || /^\/(edit|mod|u\/[A-Za-z0-9_]{1,16}|download|features|profile|news|news\/[\w-]{1,40}|changelog|store|cosmetics|hub|studio)\/?$/.test(rel)) rel = '/index.html';
   if (/^\/overlay\/?$/.test(rel)) rel = '/overlay.html';
   if (/^\/builder\/?$/.test(rel)) rel = '/builder.html';
   const file = path.normalize(path.join(SITE, rel));
@@ -1215,12 +1402,13 @@ const server = http.createServer(async (req, res) => {
     const key = `${req.method} ${url.pathname}`;
     const handler = routes[key];
     if (!handler) return fail(res, 404, 'not found');
-    const limit = key === 'PUT /profile/media' ? 22000000 : 2500000;
+    const limit = key === 'PUT /profile/media' ? 22000000 : key === 'POST /store/listing' ? 16000000 : key === 'PUT /cosmetics' ? 6000000 : 2500000;
     const body = (req.method === 'POST' || req.method === 'PUT') ? await readBody(req, limit) : {};
     const open = key === 'GET /' || key === 'GET /stats' || key.startsWith('POST /auth/') || key === 'POST /cosmetics/bulk'
-      || key === 'POST /blox/np' || key === 'POST /kofi' || key === 'GET /config' || key === 'GET /kycos' || key === 'GET /mcskin' || key === 'GET /store/items' || key === 'GET /store/image' || key === 'GET /store/kycos' || key.startsWith('GET /cf/') || key === 'GET /link/discord/callback' || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version';
+      || key === 'POST /blox/np' || key === 'POST /kofi' || key === 'GET /config' || key === 'GET /kycos' || key === 'GET /mcskin' || key === 'GET /store/items' || key === 'GET /store/image' || key === 'GET /store/kycos' || key === 'GET /store/item' || key === 'GET /store/photo' || key === 'GET /chat/img' || key === 'GET /chat' || key.startsWith('GET /cf/') || key === 'GET /link/discord/callback' || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version';
     let me = null;
     if (!open) { me = auth(req); if (!me) return fail(res, 401, 'not logged in'); }
+    else { try { me = auth(req); } catch (e) { me = null; } } // open routes: logged in is optional
     await handler(req, res, body, me);
   } catch (e) {
     console.error(e);

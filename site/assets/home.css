@@ -179,3 +179,21 @@ body.menu-open { overflow: hidden; }
 }
 @media (max-width: 560px) { .menu-btn b { display: none; } .menu-btn { width: 40px; flex: none; } .nav-top { padding: 10px 14px; gap: 8px; } .nav-top .brand em, .nav-ico { display: none; } .btn.dl { padding: 8px 12px; } .hero2 .stats { grid-template-columns: repeat(2, auto); } }
 @media (prefers-reduced-motion: reduce) { .h2-logo, .h2-glow, .h2-logo .ring { animation: none; } }
+
+/* account (remembered per device) */
+.acct { position: relative; }
+.acct-login { display: flex; align-items: center; gap: 7px; height: 36px; padding: 0 12px; border-radius: 11px; color: #cfd2da; font-size: 13px; font-weight: 600; transition: background .2s, color .2s; }
+.acct-login:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+.acct-me { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px 0 4px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255, 255, 255, .05); color: #fff; font: 600 13px var(--inter); cursor: pointer; transition: background .2s; }
+.acct-me:hover { background: rgba(255, 255, 255, .1); }
+.acct-me img { width: 28px; height: 28px; border-radius: 8px; image-rendering: pixelated; }
+.acct-me .ic { width: 14px; height: 14px; opacity: .7; }
+.acct-plus { font-style: normal; font: 800 11px var(--pop); width: 16px; height: 16px; border-radius: 5px; display: grid; place-items: center; background: linear-gradient(135deg, #ffe39a, #f5b84c); color: #2a1a00; }
+.acct-menu { position: absolute; right: 0; top: calc(100% + 8px); width: 240px; padding: 8px; border-radius: 16px; background: rgba(14, 14, 19, .97); border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(0, 0, 0, .6); z-index: 60; animation: fadeIn .2s both; }
+.am-head { display: flex; gap: 10px; align-items: center; padding: 8px 8px 12px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.am-head img { width: 40px; height: 40px; border-radius: 10px; image-rendering: pixelated; }
+.am-head b { display: block; } .am-head span { font-size: 11.5px; color: var(--mut); }
+.acct-menu a, .acct-menu button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border-radius: 10px; border: 0; background: none; color: #d9dce3; font: 500 13.5px var(--inter); cursor: pointer; text-align: left; }
+.acct-menu a:hover, .acct-menu button:hover { background: rgba(255, 255, 255, .07); color: #fff; }
+.acct-menu button { color: #ff9aa5; }
+@media (max-width: 560px) { .acct-login span, .acct-me span { display: none; } }

@@ -330,7 +330,8 @@ async function openEditor() {
     return;
   }
   if (!localStorage.getItem('kyoto.token')) return showLogin();
-  try { const me = await api('/me'); startDash(me); } catch (e) { localStorage.removeItem('kyoto.token'); showLogin(); }
+  try { const me = await api('/me'); localStorage.setItem('kyoto.me', JSON.stringify({ name: me.name, uuid: me.uuid, plus: !!me.plus })); startDash(me); }
+  catch (e) { if (e.status === 401) { localStorage.removeItem('kyoto.token'); localStorage.removeItem('kyoto.me'); if (window.refreshAccount) refreshAccount(); } showLogin(); if (e.status !== 401) $('#lgMsg').textContent = 'The Kyoto server is waking up, try again in a moment.'; }
 }
 function showLogin() { $('#loginWrap').hidden = false; $('#dash').hidden = true; setTimeout(() => ($('#lgName').value ? $$('#otp input')[0] : $('#lgName')).focus(), 50); }
 function fillOtp(code) { const ins = $$('#otp input'); [...String(code).replace(/\D/g, '')].slice(0, 6).forEach((d, i) => ins[i].value = d); }
@@ -349,6 +350,8 @@ async function login() {
     $('#lgBtn').textContent = 'Checking…';
     const r = await api('/web/login', { method: 'POST', body: { name, code }, auth: false });
     localStorage.setItem('kyoto.token', r.token);
+    localStorage.setItem('kyoto.me', JSON.stringify({ name: r.name, uuid: r.uuid }));
+    if (window.refreshAccount) refreshAccount();
     if (location.pathname.startsWith('/mod')) { toast(`Welcome, ${r.name}`, 'Opening the staff panel', 'ok'); $('#page-edit').hidden = true; $('#page-mod').hidden = false; openMod(); return; }
     toast(`Welcome, ${r.name}`, 'You can edit your profile now', 'ok');
     startDash(await api('/me'));
@@ -428,7 +431,43 @@ $('#saveBtn').onclick = async () => {
   finally { $('#saveBtn').disabled = false; }
 };
 $('#resetBtn').onclick = () => { const s = JSON.parse(SAVED); Object.assign(P, s); bindForm(); refresh(false); };
-$('#logoutBtn').onclick = async () => { try { await api('/web/logout', { method: 'POST', body: {} }); } catch (e) { /* ignore */ } localStorage.removeItem('kyoto.token'); toast('Logged out'); showLogin(); };
+$('#logoutBtn').onclick = async () => { await logOut(); showLogin(); };
+async function logOut() {
+  try { await api('/web/logout', { method: 'POST', body: {} }); } catch (e) { /* ignore */ }
+  localStorage.removeItem('kyoto.token'); localStorage.removeItem('kyoto.me'); toast('Logged out', 'This device forgot you.');
+  if (window.refreshAccount) refreshAccount();
+}
+
+/* ===================== who you are (remembered on this device) ===================== */
+(() => {
+  const head = n => `https://mc-heads.net/avatar/${encodeURIComponent(n)}/64`;
+  const show = me => {
+    $('#acctLogin').hidden = !!me; $('#acctMe').hidden = !me;
+    if (!me) { $('#acctMenu').hidden = true; return; }
+    $('#acctHead').src = head(me.name); $('#amHead').src = head(me.name);
+    $('#acctName').textContent = me.name; $('#amName').textContent = me.name;
+    $('#acctPlus').hidden = !me.plus;
+    $('#amProfile').href = '/u/' + encodeURIComponent(me.name);
+  };
+  window.refreshAccount = async () => {
+    const tok = localStorage.getItem('kyoto.token');
+    let cached = null; try { cached = JSON.parse(localStorage.getItem('kyoto.me') || 'null'); } catch (e) { /* */ }
+    if (!tok) return show(null);
+    show(cached); // instant, then check with the server
+    try {
+      const me = await api('/me');
+      const keep = { name: me.name, uuid: me.uuid, plus: !!me.plus };
+      localStorage.setItem('kyoto.me', JSON.stringify(keep)); show(keep);
+    } catch (e) {
+      if (e.status === 401) { localStorage.removeItem('kyoto.token'); localStorage.removeItem('kyoto.me'); show(null); }
+      // offline / server waking up: keep showing who you are
+    }
+  };
+  $('#acctMe').onclick = e => { e.stopPropagation(); $('#acctMenu').hidden = !$('#acctMenu').hidden; };
+  document.addEventListener('click', e => { if (!e.target.closest('#acct')) $('#acctMenu').hidden = true; });
+  $('#amLogout').onclick = async () => { $('#acctMenu').hidden = true; await logOut(); if (location.pathname.startsWith('/edit')) showLogin(); };
+  refreshAccount();
+})();
 addEventListener('beforeunload', e => { if (ME && JSON.stringify(pick(P)) !== SAVED) { e.preventDefault(); e.returnValue = ''; } });
 
 // media uploads

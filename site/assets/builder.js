@@ -748,7 +748,11 @@
   let me = null;
   async function whoami() {
     if (!localStorage.getItem('kyoto.token')) { $('#who').innerHTML = '<a href="/edit">Log in</a> to wear or post'; return; }
-    try { me = await api('/me'); $('#who').textContent = 'Signed in as ' + me.name; } catch (e) { me = null; $('#who').innerHTML = '<a href="/edit">Log in</a> to wear or post'; }
+    let cached = null; try { cached = JSON.parse(localStorage.getItem('kyoto.me') || 'null'); } catch (e) { /* */ }
+    const showMe = m => { $('#who').innerHTML = `<img src="https://mc-heads.net/avatar/${encodeURIComponent(m.name)}/32" alt="" style="width:20px;height:20px;border-radius:5px;vertical-align:-5px;margin-right:6px;image-rendering:pixelated">${esc(m.name)}`; };
+    if (cached) { me = cached; showMe(cached); }
+    try { me = await api('/me'); localStorage.setItem('kyoto.me', JSON.stringify({ name: me.name, uuid: me.uuid, plus: !!me.plus })); showMe(me); }
+    catch (e) { if (e.status === 401 || !cached) { me = null; localStorage.removeItem('kyoto.me'); $('#who').innerHTML = '<a href="/edit">Log in</a> to wear or post'; } }
   }
   function needLogin() {
     modal(`<h2>Log in first</h2><p>In Minecraft with Kyoto, type <code>/kyoto link</code>, then enter the code on the website's <b>Edit profile</b> page. Come back here after and you're set. Your cosmetic is autosaved.</p>

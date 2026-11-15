@@ -81,13 +81,36 @@ function limited(ip) {
   h.n++; hits.set(ip, h); return h.n > 240;
 }
 
+// Website logins are signed tokens, so a device stays logged in even when the server restarts or redeploys
+// (Render's free plan forgets saved files on every deploy). Set TOKEN_SECRET on Render to any long random text.
+const TOKEN_SECRET = process.env.TOKEN_SECRET || process.env.ADMIN_KEY || crypto.randomBytes(32).toString('hex');
+const b64u = b => Buffer.from(b).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+function signToken(uuid, name) {
+  const body = b64u(JSON.stringify({ u: uuid, n: name, t: Date.now() }));
+  return 'k2.' + body + '.' + b64u(crypto.createHmac('sha256', TOKEN_SECRET).update(body).digest());
+}
+function readSigned(tok) {
+  const m = /^k2\.([\w-]+)\.([\w-]+)$/.exec(String(tok || ''));
+  if (!m) return null;
+  const want = b64u(crypto.createHmac('sha256', TOKEN_SECRET).update(m[1]).digest());
+  if (want.length !== m[2].length || !crypto.timingSafeEqual(Buffer.from(want), Buffer.from(m[2]))) return null;
+  try {
+    const p = JSON.parse(Buffer.from(m[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
+    if (!/^[0-9a-f-]{32,36}$/.test(p.u) || Date.now() - p.t > 400 * 86400000) return null; // good for ~a year
+    if (db.revoked && db.revoked[m[2]]) return null;
+    if (!db.users[p.u]) db.users[p.u] = { name: String(p.n || '?').slice(0, 16), joined: Date.now() }; // server forgot you: remember again
+    return p.u;
+  } catch (e) { return null; }
+}
 function auth(req) {
   const m = /^Bearer (.+)$/.exec(req.headers.authorization || '');
   // <img> tags can't send headers: the staff panel passes ?auth=<token> for Hub images only
   const qa = !m && req.method === 'GET' && req.url.startsWith('/hub/image') ? new URL(req.url, 'http://x').searchParams.get('auth') : null;
   if (!m && !qa) return null;
-  const t = db.tokens[m ? m[1] : qa];
-  return t ? t.uuid : null;
+  const tok = m ? m[1] : qa;
+  const t = db.tokens[tok];
+  if (t) return t.uuid;
+  return readSigned(tok);
 }
 
 // ---------------- routes ----------------
@@ -327,14 +350,15 @@ routes['POST /web/login'] = async (req, res, body) => {
   }
   linkCodes.delete(code); webFails.delete(ip);
   for (const [t, tv] of Object.entries(db.tokens)) if (tv.uuid === uuid && tv.web && Date.now() - tv.created > 30 * 86400000) delete db.tokens[t];
-  const token = crypto.randomBytes(32).toString('hex');
-  db.tokens[token] = { uuid, created: Date.now(), web: true };
+  const token = signToken(uuid, db.users[uuid].name);
   save();
   send(res, 200, { token, uuid, name: db.users[uuid].name });
 };
 routes['POST /web/logout'] = async (req, res, body, me) => {
   const m = /^Bearer (.+)$/.exec(req.headers.authorization || '');
   if (m && db.tokens[m[1]] && db.tokens[m[1]].web) delete db.tokens[m[1]];
+  const sig = m && /^k2\.[\w-]+\.([\w-]+)$/.exec(m[1]);
+  if (sig) { db.revoked = db.revoked || {}; db.revoked[sig[1]] = Date.now(); }
   save(); send(res, 200, { ok: true });
 };
 routes['GET /me'] = async (req, res, body, me) => {

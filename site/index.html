@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Playfair+Display:wght@600;800&family=Silkscreen&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/site.css?v=12">
-<link rel="stylesheet" href="/assets/home.css?v=1">
+<link rel="stylesheet" href="/assets/home.css?v=2">
 </head>
 <body>
 <div id="sky"><div id="art"></div><canvas id="stars"></canvas><div class="vignette"></div><div class="grain"></div></div>
@@ -23,7 +23,15 @@
     <a class="brand" href="/" data-link><img class="logo-k" src="/img/logos/logo_k_starry.png" alt=""><span>KYOTO</span><em>CLIENT</em></a>
     <div class="nav-right">
       <span class="online" id="navOnline"><i></i><b>—</b> online</span>
-      <a class="nav-ico" href="/edit" data-link title="Edit your profile">__I_user__</a>
+      <div class="acct" id="acct">
+        <a class="acct-login" id="acctLogin" href="/edit" data-link>__I_user__<span>Log in</span></a>
+        <button class="acct-me" id="acctMe" hidden><img id="acctHead" alt=""><span id="acctName"></span><i class="acct-plus" id="acctPlus" hidden>+</i>__I_chevron__</button>
+        <div class="acct-menu" id="acctMenu" hidden>
+          <div class="am-head"><img id="amHead" alt=""><div><b id="amName"></b><span>Logged in on this device</span></div></div>
+          <a id="amProfile" href="/" data-link>__I_eye__ My profile</a><a href="/edit" data-link>__I_palette__ Edit profile</a><a href="/builder">__I_cape__ Cosmetic Builder</a>
+          <button id="amLogout">__I_logout__ Log out</button>
+        </div>
+      </div>
       <a class="btn sm dl" href="/#download" data-link>__I_download__ Download</a>
       <button class="menu-btn" id="menuBtn" aria-label="Menu"><span></span><span></span><span></span><b>Menu</b></button>
     </div>
@@ -339,7 +347,7 @@
 
 <div id="toasts"></div>
 <script src="/assets/icons.js?v=12"></script>
-<script src="/assets/site.js?v=12"></script>
+<script src="/assets/site.js?v=13"></script>
 <script src="/assets/home.js?v=1"></script>
 </body>
 </html>

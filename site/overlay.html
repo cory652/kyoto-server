@@ -4,110 +4,160 @@
 <meta charset="utf-8">
 <title>Kyoto Client - stream overlay</title>
 <!--
-  OBS / TikTok LIVE Studio: add a Browser Source with this URL, 1920x1080. The background is transparent.
-  Options (add to the URL):
-    ?every=8      minutes between ads (default 8, 0 = always on)
-    ?show=14      seconds the ad stays up (default 14)
-    ?pos=br       corner: br, bl, tr, tl, or bottom (centered)
-    ?code=hef     your creator code / name shown on the card
-    ?test=1       show it right away
+  OBS / TikTok LIVE Studio: Browser Source, 1920 x 1080, transparent background.
+  URL options:
+    ?every=30   seconds between pop-ups (default 30, 0 = always on screen)
+    ?show=10    seconds it stays up (default 10)
+    ?pos=br     corner: br, bl, tr, tl or bottom (centered)
+    ?scale=1    size (0.6 - 1.6)
 -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;700;800&display=swap" rel="stylesheet">
 <style>
-  html, body { margin: 0; background: transparent; overflow: hidden; font-family: "Poppins", "Segoe UI", system-ui, sans-serif; }
-  .wrap { position: fixed; padding: 56px; }
-  .br { right: 0; bottom: 0; } .bl { left: 0; bottom: 0; } .tr { right: 0; top: 0; } .tl { left: 0; top: 0; }
-  .bottom { left: 50%; bottom: 0; transform: translateX(-50%); }
-  .card {
-    position: relative; width: 560px; height: 150px; border-radius: 26px; overflow: hidden;
-    background: radial-gradient(120% 140% at 0% 0%, #2a1840 0%, #110c1d 55%, #07060c 100%);
-    box-shadow: 0 30px 80px rgba(0,0,0,.55), 0 0 0 1.5px rgba(255,255,255,.09) inset;
-    display: flex; align-items: center; gap: 22px; padding: 0 28px; box-sizing: border-box;
-    opacity: 0; transform: translateY(40px) scale(.92); filter: blur(6px);
-    transition: opacity .55s cubic-bezier(.2,.8,.2,1), transform .7s cubic-bezier(.2,1.4,.3,1), filter .5s;
-  }
+  :root { --s: 1; --pink: #ff8fd0; --violet: #a98bff; --sky: #8fd8ff; }
+  html, body { margin: 0; background: transparent; overflow: hidden; font-family: Poppins, "Segoe UI", system-ui, sans-serif; }
+  .wrap { position: fixed; padding: 60px; transform-origin: inherit; }
+  .br { right: 0; bottom: 0; transform-origin: right bottom; } .bl { left: 0; bottom: 0; transform-origin: left bottom; }
+  .tr { right: 0; top: 0; transform-origin: right top; } .tl { left: 0; top: 0; transform-origin: left top; }
+  .bottom { left: 50%; bottom: 0; transform: translateX(-50%); transform-origin: center bottom; }
+  .scale { transform: scale(var(--s)); transform-origin: inherit; }
+
+  /* the card */
+  .card { position: relative; width: 640px; height: 172px; border-radius: 30px; isolation: isolate;
+    opacity: 0; transform: translateX(var(--from, 120px)) scale(.9) rotate(var(--tilt, 2deg)); filter: blur(10px);
+    transition: opacity .5s ease, transform .9s cubic-bezier(.16, 1.3, .3, 1), filter .5s ease; }
+  .bl .card, .tl .card { --from: -120px; --tilt: -2deg; } .bottom .card { --from: 0; --tilt: 0deg; }
   .card.on { opacity: 1; transform: none; filter: none; }
-  .card.out { opacity: 0; transform: translateY(24px) scale(.96); filter: blur(4px); transition-duration: .45s; }
+  .card.out { opacity: 0; transform: translateY(26px) scale(.95); filter: blur(6px); transition: opacity .45s ease, transform .5s ease, filter .45s; }
+
+  /* spinning aurora border */
+  .border { position: absolute; inset: -2px; border-radius: 32px; z-index: -2; overflow: hidden; }
+  .border::before { content: ''; position: absolute; inset: -60%; background: conic-gradient(from 0deg, var(--pink), var(--violet), var(--sky), #fff6, var(--pink));
+    animation: spin 4s linear infinite; }
+  @keyframes spin { to { transform: rotate(1turn); } }
+  .bg { position: absolute; inset: 0; border-radius: 30px; z-index: -1; overflow: hidden;
+    background: radial-gradient(140% 120% at 0% 0%, #31164f 0%, #140b26 48%, #07050d 100%); box-shadow: 0 30px 90px rgba(0,0,0,.55); }
+  .aurora { position: absolute; inset: -40%; background:
+      radial-gradient(30% 40% at 20% 40%, rgba(255,143,208,.42), transparent 70%),
+      radial-gradient(30% 40% at 70% 70%, rgba(143,216,255,.30), transparent 70%),
+      radial-gradient(25% 35% at 80% 20%, rgba(169,139,255,.35), transparent 70%);
+    filter: blur(14px); animation: drift 9s ease-in-out infinite alternate; }
+  @keyframes drift { to { transform: translate(8%, -6%) rotate(12deg); } }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .glow { position: absolute; width: 260px; height: 260px; left: -60px; top: -80px; border-radius: 50%;
-    background: radial-gradient(circle, rgba(255,130,200,.35), transparent 65%); animation: drift 7s ease-in-out infinite alternate; }
-  @keyframes drift { to { transform: translate(60px, 30px); } }
-  .logo { position: relative; width: 96px; height: 96px; border-radius: 24px; flex: none;
-    box-shadow: 0 10px 30px rgba(255,120,200,.35); animation: bob 3.2s ease-in-out infinite; }
-  @keyframes bob { 50% { transform: translateY(-4px) rotate(-2deg); } }
-  .txt { position: relative; color: #fff; min-width: 0; }
-  .eyebrow { font-size: 15px; letter-spacing: .22em; font-weight: 700; color: #ff9fd6; text-transform: uppercase; }
-  .title { font-size: 40px; font-weight: 800; line-height: 1.05; margin-top: 4px; white-space: nowrap; }
-  .title span { background: linear-gradient(90deg, #fff, #ffd1ec 40%, #c8b4ff 70%, #fff); background-size: 200% 100%;
-    -webkit-background-clip: text; background-clip: text; color: transparent; animation: sheen 3.5s linear infinite; }
-  @keyframes sheen { to { background-position: -200% 0; } }
-  .sub { font-size: 19px; color: #cfc8dd; margin-top: 8px; white-space: nowrap; }
-  .sub b { color: #fff; }
-  .bar { position: absolute; left: 0; bottom: 0; height: 4px; width: 100%;
-    background: linear-gradient(90deg, #ff7ac3, #b18cff); transform-origin: left; }
-  .card.on .bar { animation: bar var(--show) linear forwards; }
-  @keyframes bar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  .shine { position: absolute; inset: 0; background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.14) 48%, transparent 60%); transform: translateX(-120%); }
+  .card.on .shine { animation: sweep 1.6s .5s ease-out; }
+  @keyframes sweep { to { transform: translateX(120%); } }
+
+  .row { position: absolute; inset: 0; display: flex; align-items: center; gap: 26px; padding: 0 30px; }
+  .logo { position: relative; width: 112px; height: 112px; flex: none; }
+  .logo img { position: relative; width: 100%; height: 100%; border-radius: 28px; box-shadow: 0 0 0 1.5px rgba(255,255,255,.35), 0 14px 40px rgba(255,120,210,.45); animation: bob 3.4s ease-in-out infinite; }
+  .logo .halo { position: absolute; inset: -14px; border-radius: 40px; border: 2px solid rgba(255,190,235,.5); animation: ping 2.4s ease-out infinite; }
+  .logo .halo.b { animation-delay: 1.2s; }
+  @keyframes ping { from { transform: scale(.88); opacity: .9; } to { transform: scale(1.28); opacity: 0; } }
+  @keyframes bob { 50% { transform: translateY(-5px) rotate(-3deg); } }
+  .orbit { position: absolute; inset: -10px; animation: spin 5s linear infinite; }
+  .orbit i { position: absolute; top: 0; left: 50%; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: #fff; box-shadow: 0 0 12px #fff, 0 0 26px var(--pink); }
+
+  .txt { min-width: 0; flex: 1; color: #fff; }
+  .top { display: flex; align-items: center; gap: 10px; }
+  .badge { font-size: 13px; font-weight: 800; letter-spacing: .18em; padding: 5px 11px; border-radius: 999px; color: #1a0f22;
+    background: linear-gradient(90deg, #ffe3a6, #ffb6e1); box-shadow: 0 6px 18px rgba(255,170,220,.4); }
+  .live { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; letter-spacing: .14em; color: #ffc8ea; }
+  .live b { width: 8px; height: 8px; border-radius: 50%; background: #ff5fa8; box-shadow: 0 0 0 0 rgba(255,95,168,.7); animation: dot 1.6s infinite; }
+  @keyframes dot { 70% { box-shadow: 0 0 0 10px rgba(255,95,168,0); } }
+  .title { margin-top: 6px; font-size: 46px; font-weight: 800; line-height: 1.02; letter-spacing: .01em; white-space: nowrap;
+    background: linear-gradient(90deg, #fff 0%, #ffd6f0 30%, #d8c8ff 60%, #fff 100%); background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: sheen 4s linear infinite; filter: drop-shadow(0 4px 18px rgba(255,150,220,.35)); }
+  @keyframes sheen { to { background-position: -220% 0; } }
+  .sub { position: relative; height: 30px; margin-top: 8px; overflow: hidden; }
+  .sub span { position: absolute; left: 0; top: 0; font-size: 20px; font-weight: 500; color: #e6ddf5; white-space: nowrap; opacity: 0; transform: translateY(100%);
+    transition: transform .55s cubic-bezier(.2,.9,.3,1), opacity .45s; }
+  .sub span.in { opacity: 1; transform: none; } .sub span.gone { opacity: 0; transform: translateY(-100%); }
+  .sub span b { color: #fff; font-weight: 700; }
+  .url { display: inline-flex; align-items: center; gap: 8px; padding: 3px 12px 3px 10px; margin-left: 4px; border-radius: 999px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22); color: #fff; font-weight: 700; }
+  .bar { position: absolute; left: 30px; right: 30px; bottom: 14px; height: 3px; border-radius: 3px; background: rgba(255,255,255,.12); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, var(--pink), var(--violet), var(--sky)); transform-origin: left; }
+  .card.on .bar i { animation: drain var(--show) linear forwards; }
   .always .bar { display: none; }
+  @keyframes drain { to { transform: scaleX(0); } }
 </style>
 </head>
 <body>
-<div class="wrap" id="wrap">
+<div class="wrap" id="wrap"><div class="scale">
   <div class="card" id="card">
-    <canvas id="stars"></canvas>
-    <div class="glow"></div>
-    <img class="logo" src="/img/logos/logo_k_starry.png" alt="">
-    <div class="txt">
-      <div class="eyebrow">Playing on</div>
-      <div class="title"><span>Kyoto Client</span></div>
-      <div class="sub" id="sub">Free Minecraft client &middot; <b>kyotoclient.cc</b></div>
+    <div class="border"></div>
+    <div class="bg"><div class="aurora"></div><canvas id="stars"></canvas><div class="shine"></div></div>
+    <div class="row">
+      <div class="logo"><span class="halo"></span><span class="halo b"></span><div class="orbit"><i></i></div><img src="/img/logos/logo_k_starry.png" alt=""></div>
+      <div class="txt">
+        <div class="top"><span class="badge">FREE</span><span class="live"><b></b>PLAYING ON</span></div>
+        <div class="title">Kyoto Client</div>
+        <div class="sub" id="sub"></div>
+      </div>
     </div>
-    <div class="bar"></div>
+    <div class="bar"><i></i></div>
   </div>
-</div>
+</div></div>
 <script>
   const q = new URLSearchParams(location.search);
-  const every = Math.max(0, Number(q.get('every') ?? 8));
-  const show = Math.max(4, Math.min(120, Number(q.get('show') ?? 14)));
+  const every = Math.max(0, Number(q.get('every') ?? 30));          // seconds
+  const show = Math.max(4, Math.min(120, Number(q.get('show') ?? 10)));
   const pos = ['br', 'bl', 'tr', 'tl', 'bottom'].includes(q.get('pos')) ? q.get('pos') : 'br';
-  const code = (q.get('code') || '').replace(/[^\w .-]/g, '').slice(0, 20);
-  const wrap = document.getElementById('wrap'), card = document.getElementById('card');
-  wrap.classList.add(pos);
+  const scale = Math.max(.6, Math.min(1.6, Number(q.get('scale')) || 1));
+  const wrap = document.getElementById('wrap'), card = document.getElementById('card'), sub = document.getElementById('sub');
+  wrap.classList.add(pos); document.documentElement.style.setProperty('--s', scale);
   card.style.setProperty('--show', show + 's');
-  const lines = [
-    'Free Minecraft client &middot; <b>kyotoclient.cc</b>',
-    'Free capes, lyrics in the sky &amp; more',
-    code ? `Download it &middot; tell them <b>${code}</b> sent you` : 'Download free at <b>kyotoclient.cc</b>'
-  ];
-  const sub = document.getElementById('sub');
+  if (pos === 'bottom') { wrap.style.transform = `translateX(-50%) scale(${scale})`; wrap.querySelector('.scale').style.transform = 'none'; }
 
-  // light starfield: one small canvas, ~40 stars, paused while hidden
-  const cv = document.getElementById('stars'), cx = cv.getContext('2d');
-  let stars = [], running = false;
-  function size() { cv.width = card.clientWidth * devicePixelRatio; cv.height = card.clientHeight * devicePixelRatio; }
-  function seed() { stars = Array.from({ length: 42 }, () => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.4 + .3, t: Math.random() * 6, s: Math.random() * .6 + .2 })); }
+  const LINES = [
+    'The free <b>Minecraft client</b> that\'s just a mod',
+    'Free capes · synced lyrics · video screens',
+    'Custom skies, friends, calls and more',
+    'Download it at <span class="url">kyotoclient.cc</span>'
+  ];
+  sub.innerHTML = LINES.map(l => `<span>${l}</span>`).join('');
+  const spans = [...sub.children];
+  let li = -1, lineTimer = null;
+  function nextLine() {
+    if (li >= 0) { spans[li].classList.remove('in'); spans[li].classList.add('gone'); const old = spans[li]; setTimeout(() => old.classList.remove('gone'), 600); }
+    li = (li + 1) % spans.length; spans[li].classList.add('in');
+  }
+
+  // twinkling stars + a shooting star now and then (only while the card is showing)
+  const cv = document.getElementById('stars'), g = cv.getContext('2d');
+  let W, H, stars = [], shoot = null, running = false;
+  function size() { const d = Math.min(2, devicePixelRatio || 1); W = cv.width = card.clientWidth * d; H = cv.height = card.clientHeight * d;
+    stars = Array.from({ length: 55 }, () => ({ x: Math.random() * W, y: Math.random() * H, r: (Math.random() ** 2 * 1.4 + .4) * d, s: Math.random() * 1.5 + .4, o: Math.random() * 6 })); }
   function frame(now) {
     if (!running) return;
-    cx.clearRect(0, 0, cv.width, cv.height);
-    for (const s of stars) {
-      const a = .35 + .65 * Math.abs(Math.sin(now / 900 * s.s + s.t));
-      cx.globalAlpha = a; cx.fillStyle = '#fff';
-      cx.beginPath(); cx.arc(s.x * cv.width, s.y * cv.height, s.r * devicePixelRatio, 0, 7); cx.fill();
+    g.clearRect(0, 0, W, H);
+    for (const s of stars) { g.globalAlpha = .3 + .7 * Math.abs(Math.sin(now / 900 * s.s + s.o)); g.fillStyle = '#fff'; g.beginPath(); g.arc(s.x, s.y, s.r, 0, 7); g.fill(); }
+    if (!shoot && Math.random() < .01) shoot = { x: W * (.3 + Math.random() * .7), y: Math.random() * H * .4, t: 0 };
+    if (shoot) {
+      shoot.t += 1; const k = shoot.t / 40, x = shoot.x - k * W * .45, y = shoot.y + k * H * .5;
+      const gr = g.createLinearGradient(x, y, x + 80, y - 90 * H / W); gr.addColorStop(0, `rgba(255,255,255,${1 - k})`); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.globalAlpha = 1; g.strokeStyle = gr; g.lineWidth = 2; g.beginPath(); g.moveTo(x, y); g.lineTo(x + 80, y - 90 * H / W); g.stroke();
+      if (k >= 1) shoot = null;
     }
     requestAnimationFrame(frame);
   }
-  size(); seed();
+  size();
 
-  let li = 0, cycle = null;
   function showAd() {
     running = true; requestAnimationFrame(frame);
-    sub.innerHTML = lines[li % lines.length];
     card.classList.remove('out'); void card.offsetWidth; card.classList.add('on');
-    if (every === 0) { card.classList.add('always'); cycle = setInterval(() => { li++; sub.style.opacity = 0; setTimeout(() => { sub.innerHTML = lines[li % lines.length]; sub.style.opacity = 1; }, 300); }, 6000); sub.style.transition = 'opacity .3s'; return; }
-    const step = setInterval(() => { li++; sub.innerHTML = lines[li % lines.length]; }, show * 1000 / 3);
-    setTimeout(() => { clearInterval(step); card.classList.remove('on'); card.classList.add('out'); setTimeout(() => { running = false; }, 600); }, show * 1000);
+    li = -1; spans.forEach(s => s.classList.remove('in', 'gone')); nextLine();
+    clearInterval(lineTimer); lineTimer = setInterval(nextLine, every === 0 ? 4000 : Math.max(2200, show * 1000 / LINES.length));
+    if (every === 0) { card.classList.add('always'); return; }
+    setTimeout(() => {
+      clearInterval(lineTimer);
+      card.classList.remove('on'); card.classList.add('out');
+      setTimeout(() => { running = false; }, 700);
+    }, show * 1000);
   }
-  if (every === 0 || q.get('test')) showAd();
-  if (every > 0) setInterval(showAd, every * 60000);
-  if (every > 0 && !q.get('test')) setTimeout(showAd, 4000);
+  // first one shortly after the source loads, then every N seconds (counted from when the last one appeared)
+  setTimeout(showAd, q.get('test') ? 200 : 2500);
+  if (every > 0) setInterval(showAd, Math.max(every, show + 2) * 1000);
 </script>
 </body>
 </html>

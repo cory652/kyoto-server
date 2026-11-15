@@ -963,6 +963,26 @@ routes['GET /mcskin'] = async (req, res) => {
   } catch (e) { fail(res, 502, 'Couldn\'t get that skin'); }
 };
 
+// ---------------- public Store (website /store): approved community capes + builds, no login needed to look ----------------
+routes['GET /store/items'] = async (req, res) => {
+  const top = q(req).get('sort') !== 'new';
+  const list = H.posts.filter(p => !p.pending && ((p.type === 'cape' && p.image) || p.type === 'kycos'))
+    .sort(top ? (a, b) => b.likes.length - a.likes.length || b.at - a.at : (a, b) => b.at - a.at).slice(0, 120)
+    .map(p => ({ id: p.id, type: p.type, title: p.title, name: p.name, likes: p.likes.length, slot: p.slot || '', at: p.at, gif: p.image === 'gif' }));
+  send(res, 200, { items: list });
+};
+routes['GET /store/image'] = async (req, res) => {
+  const p = H.posts.find(x => x.id === Number(q(req).get('id')) && x.type === 'cape' && !x.pending && x.image);
+  if (!p) return fail(res, 404, 'gone');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  send(res, 200, fs.readFileSync(path.join(HUB_IMG, String(p.id))), p.image === 'gif' ? 'image/gif' : 'image/png');
+};
+routes['GET /store/kycos'] = async (req, res) => {
+  const p = H.posts.find(x => x.id === Number(q(req).get('id')) && x.type === 'kycos' && !x.pending);
+  if (!p) return fail(res, 404, 'gone');
+  send(res, 200, { data: p.data });
+};
+
 // ---------------- staff panel (website: /mod) ----------------
 // Owners (OWNERS env var) are always staff. Owners can add moderators from the panel.
 // Moderators can: approve/reject capes, delete posts + chat, handle reports, mute, ban (not other staff), reset profiles.
@@ -1104,7 +1124,7 @@ const SITE_TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; cha
 function serveSite(req, res, pathname) {
   // pretty URLs: /edit, /u/<name>, /download, /features -> the single page app
   let rel = decodeURIComponent(pathname);
-  if (rel === '/' || /^\/(edit|mod|u\/[A-Za-z0-9_]{1,16}|download|features|profile)\/?$/.test(rel)) rel = '/index.html';
+  if (rel === '/' || /^\/(edit|mod|u\/[A-Za-z0-9_]{1,16}|download|features|profile|news|news\/[\w-]{1,40}|changelog|store|studio)\/?$/.test(rel)) rel = '/index.html';
   if (/^\/overlay\/?$/.test(rel)) rel = '/overlay.html';
   if (/^\/builder\/?$/.test(rel)) rel = '/builder.html';
   const file = path.normalize(path.join(SITE, rel));
@@ -1198,7 +1218,7 @@ const server = http.createServer(async (req, res) => {
     const limit = key === 'PUT /profile/media' ? 22000000 : 2500000;
     const body = (req.method === 'POST' || req.method === 'PUT') ? await readBody(req, limit) : {};
     const open = key === 'GET /' || key === 'GET /stats' || key.startsWith('POST /auth/') || key === 'POST /cosmetics/bulk'
-      || key === 'POST /blox/np' || key === 'POST /kofi' || key === 'GET /config' || key === 'GET /kycos' || key === 'GET /mcskin' || key.startsWith('GET /cf/') || key === 'GET /link/discord/callback' || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version';
+      || key === 'POST /blox/np' || key === 'POST /kofi' || key === 'GET /config' || key === 'GET /kycos' || key === 'GET /mcskin' || key === 'GET /store/items' || key === 'GET /store/image' || key === 'GET /store/kycos' || key.startsWith('GET /cf/') || key === 'GET /link/discord/callback' || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version';
     let me = null;
     if (!open) { me = auth(req); if (!me) return fail(res, 401, 'not logged in'); }
     await handler(req, res, body, me);

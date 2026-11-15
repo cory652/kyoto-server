@@ -124,10 +124,7 @@
     { id: 'w3', tag: 'Update', title: 'Kyoto Launcher 2.0', at: Date.now() - 2 * 864e5, body: 'A mod browser for Modrinth and CurseForge, the Hub and Store in the launcher, and all new settings.' },
     { id: 'w4', tag: 'Event', title: 'Suggest anything', at: Date.now() - 3 * 864e5, body: 'A lot of Kyoto came straight from players. Post your ideas in the Hub.' }];
   function render() {
-    const tags = ['All', ...new Set(NEWS.map(n => n.tag))];
-    $('#newsTabs').innerHTML = tags.map(t => `<button class="${t === TAG ? 'on' : ''}" data-ntag="${esc(t)}">${esc(t)}</button>`).join('');
-    $$('[data-ntag]').forEach(b => b.onclick = () => { TAG = b.dataset.ntag; render(); });
-    const list = NEWS.filter(n => TAG === 'All' || n.tag === TAG);
+    const list = NEWS.slice();
     if (!list.length) { $('#newsGrid').innerHTML = '<p class="muted">Nothing here yet.</p>'; return; }
     const [f, ...rest] = list;
     $('#newsGrid').innerHTML = `
@@ -138,7 +135,7 @@
           <div class="nfoot"><span class="by"><img class="logo-k" src="/img/logos/logo_k_${theme}.png" alt="">Kyoto team</span><span class="more">${icon('arrow')} Read more</span></div></div></article>
       <div class="nside">${rest.slice(0, 4).map(n => `<article class="ncard row" data-nid="${esc(n.id)}"><div class="nimg" style="background-image:url('${esc(artFor(n))}')"></div>
         <div class="nbody"><small>${esc(n.tag)} · ${esc(when(n.at))}</small><h4>${esc(n.title)}</h4></div><span class="go">${icon('arrow')}</span></article>`).join('')}</div>`;
-    $$('[data-nid]').forEach(c => c.onclick = () => openArticle(c.dataset.nid));
+    $$('#newsGrid [data-nid]').forEach(c => c.onclick = () => openArticle(c.dataset.nid));
   }
   function md(text) {
     return esc(text).split(/\n{2,}/).map(b => {
@@ -156,10 +153,10 @@
     art2.onclick = e => { if (e.target === art2) closeArticle(); };
   }
   function closeArticle() { art2.hidden = true; document.body.classList.remove('menu-open'); }
-  api('/news', { auth: false }).then(r => { NEWS = (r.news && r.news.length ? r.news : FALLBACK).sort((a, b) => (b.pinned - a.pinned) || (b.at - a.at)); render(); })
-    .catch(() => { NEWS = FALLBACK; render(); });
-  // "Changelog" link = news filtered to updates
-  $$('[data-tag]').forEach(a => a.addEventListener('click', () => { TAG = NEWS.some(n => n.tag === a.dataset.tag) ? a.dataset.tag : 'All'; render(); }));
+  const ready = api('/news', { auth: false }).then(r => { NEWS = (r.news && r.news.length ? r.news : FALLBACK).sort((a, b) => (b.pinned - a.pinned) || (b.at - a.at)); render(); return NEWS; })
+    .catch(() => { NEWS = FALLBACK; render(); return NEWS; });
+  // shared with the News page
+  window.KY_NEWS = { ready, list: () => NEWS, open: openArticle, close: closeArticle, artFor, when };
 
   observe();
 })();

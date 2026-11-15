@@ -117,7 +117,13 @@ function route() {
   const p = location.pathname;
   const user = /^\/u\/([A-Za-z0-9_]{1,16})\/?$/.exec(p) || (new URLSearchParams(location.search).get('u') ? [0, new URLSearchParams(location.search).get('u')] : null);
   const edit = p.startsWith('/edit'), mod = p.startsWith('/mod');
-  $('#page-home').hidden = !!user || edit || mod;
+  const sub = /^\/(news|changelog|store|download|studio)(\/|$)/.exec(p);
+  const page = sub ? (sub[1] === 'changelog' ? 'news' : sub[1]) : null;
+  $('#page-home').hidden = !!user || edit || mod || !!page;
+  for (const n of ['news', 'store', 'download', 'studio']) { const el = $('#page-' + n); if (el) el.hidden = page !== n; }
+  const foot = $('#siteFoot'); if (foot) foot.hidden = !!user || edit || mod;
+  document.title = { news: sub && sub[1] === 'changelog' ? 'Changelog - Kyoto Client' : 'News - Kyoto Client', store: 'Store - Kyoto Client', download: 'Download Kyoto Client', studio: 'Kyoto Studio' }[page] || 'Kyoto Client · The best client is just a mod';
+  if (page && window.openPage) window.openPage(page, p);
   $('#page-edit').hidden = !edit;
   $('#page-mod').hidden = !mod;
   $('#page-user').hidden = !user;
@@ -203,7 +209,7 @@ function countUp(el, to) { const t0 = performance.now(); (function f(n) { const 
 api('/stats', { auth: false }).then(s => { $('#navOnline b').textContent = s.online; const lo = $('#liveOnline'); if (lo) lo.textContent = s.online; window.KY_STATS = s; countUp($('[data-count=online]'), s.online); countUp($('[data-count=users]'), s.users); }).catch(() => { $('#navOnline').style.display = 'none'; });
 api('/mods/list', { auth: false }).then(r => {
   const vs = r.versions || [];
-  $('#jarList').innerHTML = vs.length ? vs.map(v => `<a href="${CONFIG.api}/mods/kyoto-${esc(v)}.jar">${icon('download')} Minecraft ${esc(v)}<span class="muted small">${r.files && r.files[v] ? (r.files[v].size / 1e6).toFixed(1) + ' MB' : ''}</span></a>`).join('') : '<p class="muted small">The jar is coming soon. Use the launcher.</p>';
+  $('#jarList').innerHTML = vs.length ? vs.map(v => `<a href="${CONFIG.api}/mods/kyoto-${esc(v)}.jar">${icon('download')} Minecraft ${esc(v)}<span class="muted small">${r.files && r.files[v] && r.files[v].size > 0 ? (r.files[v].size / 1e6).toFixed(1) + ' MB' : ''}</span></a>`).join('') : '<p class="muted small">The jar is coming soon. Use the launcher.</p>';
   if (vs[0]) $('#heroMc').textContent = vs[0];
 }).catch(() => { $('#jarList').innerHTML = '<p class="muted small">Couldn\'t reach the Kyoto server. Try again in a minute.</p>'; });
 

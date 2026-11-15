@@ -90,7 +90,7 @@
       for (const i of [0, 1, 2, 0, 2, 3]) this.v(p[i][0], p[i][1], p[i][2], uv[i][0], uv[i][1], c[0], c[1], c[2], c[3]);
     }
     line(a, b, c) { this.v(a[0], a[1], a[2], 0, 0, ...c); this.v(b[0], b[1], b[2], 0, 0, ...c); }
-    draw(mvp, tex, mode = gl.TRIANGLES, cut = 0.02) {
+    draw(mvp, tex, mode = this.mode || gl.TRIANGLES, cut = 0.02) {
       if (this.dirty) { gl.bindBuffer(gl.ARRAY_BUFFER, this.buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.a), gl.DYNAMIC_DRAW); this.n = this.a.length / 9; this.dirty = false; }
       if (!this.n) return;
       gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
@@ -127,6 +127,9 @@
   const sg = skin.getContext('2d');
   let skinTex = null;
   function defaultSkin() {
+    const i = new Image(); i.onload = () => loadSkinImage(i, false); i.onerror = () => drawnSkin(); i.src = '/img/skins/steve.png';
+  }
+  function drawnSkin() {
     sg.clearRect(0, 0, 64, 64);
     const f = (c, x, y, w, h) => { sg.fillStyle = c; sg.fillRect(x, y, w, h); };
     // head
@@ -155,32 +158,51 @@
     skinTex = texFrom(skin);
     const p = $('#skinPrev').getContext('2d'); p.clearRect(0, 0, 64, 64); p.drawImage(skin, 0, 0);
     try { localStorage.setItem('kyoto.builder.skin', skin.toDataURL()); } catch (e) { /* full */ }
-    buildPlayer(); redraw();
+    buildPlayer(); draw2d(); redraw();
   }
 
   /* ===================================================== the player ===================================================== */
   const PIVOT = { head: [0, 24, 0], body: [0, 24, 0], rarm: [-5, 22, 0], larm: [5, 22, 0], rleg: [-1.9, 12, 0], lleg: [1.9, 12, 0] };
-  const parts = {}; for (const k of Object.keys(PIVOT)) parts[k] = { base: new Mesh(), over: new Mesh() };
-  const show = { head: true, body: true, arms: true, legs: true };
-  const layers = { hat: true, jacket: true, sleeves: true, pants: true };
+  const PART_KEYS = ['head', 'body', 'rarm', 'larm', 'rleg', 'lleg'];
+  const parts = {}; for (const k of PART_KEYS) parts[k] = { base: new Mesh(), over: new Mesh(), gBase: new Mesh(), gOver: new Mesh() };
+  /** Each body part and its outer layer (hat, jacket, sleeves, pants) can be hidden on its own. */
+  const partOn = { head: true, body: true, rarm: true, larm: true, rleg: true, lleg: true };
+  const layerOn = { head: true, body: true, rarm: true, larm: true, rleg: true, lleg: true };
   let arms = 'wide';
-  function buildPlayer() {
-    const T = 64, aw = arms === 'slim' ? 3 : 4;
-    for (const k in parts) { parts[k].base.clear(); parts[k].over.clear(); }
-    box(parts.head.base, -4, 0, -4, 4, 8, 4, 0, 0, 8, 8, 8, T, T); box(parts.head.over, -4, 0, -4, 4, 8, 4, 32, 0, 8, 8, 8, T, T, .5);
-    box(parts.body.base, -4, -12, -2, 4, 0, 2, 16, 16, 8, 12, 4, T, T); box(parts.body.over, -4, -12, -2, 4, 0, 2, 16, 32, 8, 12, 4, T, T, .25);
-    box(parts.rarm.base, -aw + 1, -10, -2, 1, 2, 2, 40, 16, aw, 12, 4, T, T); box(parts.rarm.over, -aw + 1, -10, -2, 1, 2, 2, 40, 32, aw, 12, 4, T, T, .25);
-    box(parts.larm.base, -1, -10, -2, aw - 1, 2, 2, 32, 48, aw, 12, 4, T, T); box(parts.larm.over, -1, -10, -2, aw - 1, 2, 2, 48, 48, aw, 12, 4, T, T, .25);
-    box(parts.rleg.base, -2.1, -12, -2, 1.9, 0, 2, 0, 16, 4, 12, 4, T, T); box(parts.rleg.over, -2.1, -12, -2, 1.9, 0, 2, 0, 32, 4, 12, 4, T, T, .25);
-    box(parts.lleg.base, -1.9, -12, -2, 2.1, 0, 2, 16, 48, 4, 12, 4, T, T); box(parts.lleg.over, -1.9, -12, -2, 2.1, 0, 2, 0, 48, 4, 12, 4, T, T, .25);
+  /** Box of a part (relative to its pivot), its UV origin and size, and the outer layer's UV origin + how much bigger it is. */
+  function spec(k) {
+    const aw = arms === 'slim' ? 3 : 4;
+    return {
+      head: { b: [-4, 0, -4, 4, 8, 4], uv: [0, 0], ov: [32, 0], s: [8, 8, 8], inf: .5 },
+      body: { b: [-4, -12, -2, 4, 0, 2], uv: [16, 16], ov: [16, 32], s: [8, 12, 4], inf: .25 },
+      rarm: { b: [-aw + 1, -10, -2, 1, 2, 2], uv: [40, 16], ov: [40, 32], s: [aw, 12, 4], inf: .25 },
+      larm: { b: [-1, -10, -2, aw - 1, 2, 2], uv: [32, 48], ov: [48, 48], s: [aw, 12, 4], inf: .25 },
+      rleg: { b: [-2.1, -12, -2, 1.9, 0, 2], uv: [0, 16], ov: [0, 32], s: [4, 12, 4], inf: .25 },
+      lleg: { b: [-1.9, -12, -2, 2.1, 0, 2], uv: [16, 48], ov: [0, 48], s: [4, 12, 4], inf: .25 }
+    }[k];
   }
-  /** Solid boxes of the body in model space (rest pose) - you build onto these. */
+  /** Pixel grid lines on every face of a box, so you can see each pixel you can paint. */
+  function gridBox(m, b, s, inflate) {
+    const [x0, y0, z0, x1, y1, z1] = [b[0] - inflate, b[1] - inflate, b[2] - inflate, b[3] + inflate, b[4] + inflate, b[5] + inflate];
+    const [w, h, d] = s, e = .012, C = [0, 0, 0, .38];
+    const lerp = (a, c, t) => a + (c - a) * t;
+    for (let i = 0; i <= w; i++) { const x = lerp(x0, x1, i / w); m.line([x, y0, z1 + e], [x, y1, z1 + e], C); m.line([x, y0, z0 - e], [x, y1, z0 - e], C); m.line([x, y1 + e, z0], [x, y1 + e, z1], C); m.line([x, y0 - e, z0], [x, y0 - e, z1], C); }
+    for (let j = 0; j <= h; j++) { const y = lerp(y0, y1, j / h); m.line([x0, y, z1 + e], [x1, y, z1 + e], C); m.line([x0, y, z0 - e], [x1, y, z0 - e], C); m.line([x0 - e, y, z0], [x0 - e, y, z1], C); m.line([x1 + e, y, z0], [x1 + e, y, z1], C); }
+    for (let k = 0; k <= d; k++) { const z = lerp(z0, z1, k / d); m.line([x0 - e, y0, z], [x0 - e, y1, z], C); m.line([x1 + e, y0, z], [x1 + e, y1, z], C); m.line([x0, y1 + e, z], [x1, y1 + e, z], C); m.line([x0, y0 - e, z], [x1, y0 - e, z], C); }
+  }
+  function buildPlayer() {
+    for (const k of PART_KEYS) {
+      const p = parts[k], sp = spec(k), [w, h, d] = sp.s;
+      for (const m of [p.base, p.over, p.gBase, p.gOver]) m.clear();
+      box(p.base, ...sp.b, sp.uv[0], sp.uv[1], w, h, d, 64, 64);
+      box(p.over, ...sp.b, sp.ov[0], sp.ov[1], w, h, d, 64, 64, sp.inf);
+      gridBox(p.gBase, sp.b, sp.s, 0); gridBox(p.gOver, sp.b, sp.s, sp.inf);
+    }
+  }
+  /** Solid boxes of the visible body in model space (rest pose) - you build onto these. */
   function bodySolids() {
-    const aw = arms === 'slim' ? 3 : 4, out = [];
-    if (show.head) out.push([-4, 24, -4, 4, 32, 4]);
-    if (show.body) out.push([-4, 12, -2, 4, 24, 2]);
-    if (show.arms) { out.push([-4 - aw, 12, -2, -4, 24, 2]); out.push([4, 12, -2, 4 + aw, 24, 2]); }
-    if (show.legs) { out.push([-4, 0, -2, 0, 12, 2]); out.push([0, 0, -2, 4, 12, 2]); }
+    const out = [];
+    for (const k of PART_KEYS) if (partOn[k]) { const b = spec(k).b, pv = PIVOT[k]; out.push([b[0] + pv[0], b[1] + pv[1], b[2] + pv[2], b[3] + pv[0], b[4] + pv[1], b[5] + pv[2]]); }
     return out;
   }
 
@@ -292,14 +314,19 @@
       VP = M.mul(P, V);
       if ($('#showGrid').checked) floor.draw(VP, null, gl.LINES);
       // player
-      const vis = { head: show.head, body: show.body, rarm: show.arms, larm: show.arms, rleg: show.legs, lleg: show.legs };
-      const lay = { head: layers.hat, body: layers.jacket, rarm: layers.sleeves, larm: layers.sleeves, rleg: layers.pants, lleg: layers.pants };
-      for (const k in parts) {
-        if (!vis[k]) continue;
+      const skinMode = MODE === 'skin', grid = $('#showGrid').checked;
+      for (const k of PART_KEYS) {
         const m = M.mul(VP, M.mul(M.trans(...PIVOT[k]), M.rx(boneAngle(k, t))));
-        parts[k].base.draw(m, skinTex, gl.TRIANGLES, .5);
-        if (lay[k]) parts[k].over.draw(m, skinTex, gl.TRIANGLES, .5);
+        if (partOn[k]) {
+          parts[k].base.draw(m, skinTex, gl.TRIANGLES, skinMode ? .02 : .5);
+          if (skinMode && grid && paintLayer === 'base') { gl.depthMask(false); parts[k].gBase.draw(m, null, gl.LINES); gl.depthMask(true); }
+        }
+        if (layerOn[k]) {
+          parts[k].over.draw(m, skinTex, gl.TRIANGLES, .5);
+          if (skinMode && grid && paintLayer === 'outer') { gl.depthMask(false); parts[k].gOver.draw(m, null, gl.LINES); gl.depthMask(true); }
+        }
       }
+      if (skinMode && paintHover) { gl.disable(gl.DEPTH_TEST); paintHoverMesh.draw(VP, null); gl.enable(gl.DEPTH_TEST); }
       // cape preview
       if (capeTexGL && (capeShown || paneNow === 'cape')) {
         const fi = capeFrames > 1 ? Math.floor(t * 10) % capeFrames : 0;
@@ -307,13 +334,13 @@
         capeMesh.draw(M.mul(VP, M.mul(M.trans(...PIVOT.body), M.rx(anim ? .15 + Math.sin(t * 6) * .05 : .1))), capeTexGL, gl.TRIANGLES, .5);
       }
       // the cosmetic (+ its mirror)
-      for (const left of S.mirror && S.slot !== 'head' && S.slot !== 'back' ? [false, true] : [false]) {
+      if (MODE !== 'skin') for (const left of S.mirror && S.slot !== 'head' && S.slot !== 'back' ? [false, true] : [false]) {
         const sm = M.mul(VP, slotMatrix(left, t));
         if (S.kind === 'voxel') voxMesh.draw(sm, null);
         else if (picTex) picMesh.draw(M.mul(sm, picMatrix()), picTex, gl.TRIANGLES, .1);
       }
       // build space + hover
-      if ($('#showGrid').checked) {
+      if ($('#showGrid').checked && MODE !== 'skin') {
         gl.depthMask(false);
         lines.draw(M.mul(VP, slotMatrix(false, t)), null, gl.LINES);
         if (!anim && hover) ghost.draw(M.mul(VP, slotMatrix(false, 0)), null);
@@ -416,6 +443,231 @@
     }
   }
 
+  /* ===================================================== skin painting (Kyoto Studio) ===================================================== */
+  let MODE = localStorage.getItem('kyoto.studio.mode') || 'skin';
+  let paintLayer = 'base', brush = 1, mirrorPaint = false, paintHover = null;
+  const paintHoverMesh = new Mesh();
+  const skinUndo = [], skinRedo = [];
+  function updateSkinTex() {
+    gl.bindTexture(gl.TEXTURE_2D, skinTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, skin);
+    draw2d(); redraw();
+    clearTimeout(updateSkinTex.t); updateSkinTex.t = setTimeout(() => { try { localStorage.setItem('kyoto.builder.skin', skin.toDataURL()); } catch (e) { /* */ } const p = $('#skinPrev').getContext('2d'); p.clearRect(0, 0, 64, 64); p.drawImage(skin, 0, 0); }, 300);
+  }
+  const skinSnap = () => sg.getImageData(0, 0, 64, 64);
+  function pushSkinUndo() { skinUndo.push(skinSnap()); if (skinUndo.length > 100) skinUndo.shift(); skinRedo.length = 0; }
+  // faces: 0 +z front, 1 -z back, 2 -x right, 3 +x left, 4 +y top, 5 -y bottom
+  function faceRect(sp, uv, f) {
+    const [u, v] = uv, [w, h, d] = sp.s;
+    return [[u + d, v + d, w, h], [u + 2 * d + w, v + d, w, h], [u, v + d, d, h], [u + d + w, v + d, d, h], [u + d, v, w, d], [u + d + w, v, w, d]][f];
+  }
+  /** Which skin pixel is at a point on a face of a part. */
+  function facePixel(k, layer, P, f) {
+    const sp = spec(k), pv = PIVOT[k], inf = layer === 'outer' ? sp.inf : 0;
+    const [x0, y0, z0, x1, y1, z1] = [sp.b[0] + pv[0] - inf, sp.b[1] + pv[1] - inf, sp.b[2] + pv[2] - inf, sp.b[3] + pv[0] + inf, sp.b[4] + pv[1] + inf, sp.b[5] + pv[2] + inf];
+    const [w, h, d] = sp.s, [rx, ry] = faceRect(sp, layer === 'outer' ? sp.ov : sp.uv, f);
+    const fx = (P[0] - x0) / (x1 - x0), fy = (y1 - P[1]) / (y1 - y0), fz = (P[2] - z0) / (z1 - z0);
+    const cl = (t, n) => clamp(Math.floor(t * n), 0, n - 1);
+    switch (f) {
+      case 0: return [rx + cl(fx, w), ry + cl(fy, h)];
+      case 1: return [rx + cl(1 - fx, w), ry + cl(fy, h)];
+      case 2: return [rx + cl(fz, d), ry + cl(fy, h)];
+      case 3: return [rx + cl(1 - fz, d), ry + cl(fy, h)];
+      case 4: return [rx + cl(fx, w), ry + cl(fz, d)];
+      default: return [rx + cl(fx, w), ry + cl(fz, d)];
+    }
+  }
+  /** Casts the mouse ray at the visible parts of the layer you're painting. */
+  function pickPixel(mx, my, layerOverride) {
+    if (!VP) return null;
+    const R = ray(mx, my); if (!R) return null;
+    const layer = layerOverride || paintLayer;
+    let best = null;
+    for (const k of PART_KEYS) {
+      if (layer === 'base' ? !partOn[k] : !layerOn[k]) continue;
+      const hit = hitBox(R, k, layer);
+      if (hit && (!best || hit.t < best.t)) best = Object.assign(hit, { k, layer });
+    }
+    if (!best) return null;
+    best.px = facePixel(best.k, layer, best.P, best.f);
+    return best;
+  }
+  function boxAbs(k, layer) {
+    const sp = spec(k), pv = PIVOT[k], inf = layer === 'outer' ? sp.inf : 0;
+    return [sp.b[0] + pv[0] - inf, sp.b[1] + pv[1] - inf, sp.b[2] + pv[2] - inf, sp.b[3] + pv[0] + inf, sp.b[4] + pv[1] + inf, sp.b[5] + pv[2] + inf];
+  }
+  function hitBox(R, k, layer) {
+    const b = boxAbs(k, layer); let tmin = -1e9, tmax = 1e9, ax = -1, sgn = 0;
+    for (let i = 0; i < 3; i++) {
+      const lo = b[i], hi = b[i + 3];
+      if (Math.abs(R.d[i]) < 1e-9) { if (R.o[i] < lo || R.o[i] > hi) return null; continue; }
+      let t1 = (lo - R.o[i]) / R.d[i], t2 = (hi - R.o[i]) / R.d[i], s1 = -1;
+      if (t1 > t2) { [t1, t2] = [t2, t1]; s1 = 1; }
+      if (t1 > tmin) { tmin = t1; ax = i; sgn = s1; }
+      tmax = Math.min(tmax, t2);
+    }
+    if (tmin > tmax || tmax < 0 || ax < 0) return null;
+    const P = [R.o[0] + R.d[0] * tmin, R.o[1] + R.d[1] * tmin, R.o[2] + R.d[2] * tmin];
+    const f = ax === 2 ? (sgn > 0 ? 0 : 1) : ax === 0 ? (sgn > 0 ? 3 : 2) : (sgn > 0 ? 4 : 5);
+    return { t: tmin, P, f };
+  }
+  /** The same spot on the other side of the body (for mirror painting). */
+  function mirrorHit(hit) {
+    const P = [-hit.P[0], hit.P[1], hit.P[2]];
+    const f = hit.f === 2 ? 3 : hit.f === 3 ? 2 : hit.f;
+    for (const k of PART_KEYS) {
+      const b = boxAbs(k, hit.layer), e = .02;
+      if (P[0] >= b[0] - e && P[0] <= b[3] + e && P[1] >= b[1] - e && P[1] <= b[4] + e && P[2] >= b[2] - e && P[2] <= b[5] + e) return { k, layer: hit.layer, f, P, px: facePixel(k, hit.layer, P, f) };
+    }
+    return null;
+  }
+  const rgba = hex => { const [r, g, b] = hexRgb(hex); return [r * 255 | 0, g * 255 | 0, b * 255 | 0, 255]; };
+  function setPx(x, y, c) { const id = sg.createImageData(1, 1); id.data.set(c); sg.putImageData(id, x, y); }
+  function getPx(x, y) { const d = sg.getImageData(x, y, 1, 1).data; return [d[0], d[1], d[2], d[3]]; }
+  /** Applies the current skin tool at a pixel, clipped to the face it's on so brushes never bleed onto other parts. */
+  function paintPixel(hit, first) {
+    const sp = spec(hit.k), [rx, ry, rw, rh] = faceRect(sp, hit.layer === 'outer' ? sp.ov : sp.uv, hit.f), [x, y] = hit.px;
+    const tool = S.tool;
+    if (tool === 'pick') { const c = getPx(x, y); if (c[3] > 0) { setColor(rgbHex(c[0], c[1], c[2])); setTool('place'); } return; }
+    if (tool === 'fill') {
+      if (!first) return;
+      const from = getPx(x, y).join(','), to = tool === 'fill' ? rgba(S.color) : [0, 0, 0, 0];
+      if (from === to.join(',')) return;
+      const img = sg.getImageData(0, 0, 64, 64), st = [[x, y]], seen = new Set();
+      while (st.length) {
+        const [cx, cy] = st.pop(), k = cx + ',' + cy;
+        if (seen.has(k) || cx < rx || cy < ry || cx >= rx + rw || cy >= ry + rh) continue; seen.add(k);
+        const i = (cy * 64 + cx) * 4; if ([img.data[i], img.data[i + 1], img.data[i + 2], img.data[i + 3]].join(',') !== from) continue;
+        img.data.set(to, i); st.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
+      }
+      sg.putImageData(img, 0, 0); return;
+    }
+    const c = tool === 'erase' ? [0, 0, 0, 0] : rgba(S.color);
+    const r = brush - 1;
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      const X = x + dx, Y = y + dy; if (X < rx || Y < ry || X >= rx + rw || Y >= ry + rh) continue;
+      if (c[3] === 0) sg.clearRect(X, Y, 1, 1); else setPx(X, Y, c);
+    }
+  }
+  function paint3d(e, first) {
+    const hit = pickPixel(e.clientX, e.clientY); if (!hit) return;
+    paintPixel(hit, first);
+    if (mirrorPaint) { const m = mirrorHit(hit); if (m && !(m.k === hit.k && m.px[0] === hit.px[0] && m.px[1] === hit.px[1])) paintPixel(m, first); }
+    updateSkinTex();
+  }
+  function updatePaintHover(e) {
+    paintHoverMesh.clear(); paintHover = null;
+    const hit = pickPixel(e.clientX, e.clientY);
+    if (hit) {
+      paintHover = hit;
+      // outline the pixel square on that face
+      const sp = spec(hit.k), b = boxAbs(hit.k, hit.layer), [w, h, d] = sp.s;
+      const sx = (b[3] - b[0]) / w, sy = (b[4] - b[1]) / h, sz = (b[5] - b[2]) / d;
+      const [x, y] = hit.px, [rx, ry] = faceRect(sp, hit.layer === 'outer' ? sp.ov : sp.uv, hit.f);
+      const i = x - rx, j = y - ry, e2 = .03, C = MODE === 'skin' && S.tool === 'erase' ? [1, .4, .45, .9] : [...hexRgb(S.color), .95];
+      let q;
+      switch (hit.f) {
+        case 0: q = [[b[0] + i * sx, b[4] - (j + 1) * sy, b[5] + e2], [b[0] + (i + 1) * sx, b[4] - (j + 1) * sy, b[5] + e2], [b[0] + (i + 1) * sx, b[4] - j * sy, b[5] + e2], [b[0] + i * sx, b[4] - j * sy, b[5] + e2]]; break;
+        case 1: q = [[b[3] - i * sx, b[4] - (j + 1) * sy, b[2] - e2], [b[3] - (i + 1) * sx, b[4] - (j + 1) * sy, b[2] - e2], [b[3] - (i + 1) * sx, b[4] - j * sy, b[2] - e2], [b[3] - i * sx, b[4] - j * sy, b[2] - e2]]; break;
+        case 2: q = [[b[0] - e2, b[4] - (j + 1) * sy, b[2] + i * sz], [b[0] - e2, b[4] - (j + 1) * sy, b[2] + (i + 1) * sz], [b[0] - e2, b[4] - j * sy, b[2] + (i + 1) * sz], [b[0] - e2, b[4] - j * sy, b[2] + i * sz]]; break;
+        case 3: q = [[b[3] + e2, b[4] - (j + 1) * sy, b[5] - i * sz], [b[3] + e2, b[4] - (j + 1) * sy, b[5] - (i + 1) * sz], [b[3] + e2, b[4] - j * sy, b[5] - (i + 1) * sz], [b[3] + e2, b[4] - j * sy, b[5] - i * sz]]; break;
+        case 4: q = [[b[0] + i * sx, b[4] + e2, b[2] + j * sz], [b[0] + (i + 1) * sx, b[4] + e2, b[2] + j * sz], [b[0] + (i + 1) * sx, b[4] + e2, b[2] + (j + 1) * sz], [b[0] + i * sx, b[4] + e2, b[2] + (j + 1) * sz]]; break;
+        default: q = [[b[0] + i * sx, b[1] - e2, b[2] + j * sz], [b[0] + (i + 1) * sx, b[1] - e2, b[2] + j * sz], [b[0] + (i + 1) * sx, b[1] - e2, b[2] + (j + 1) * sz], [b[0] + i * sx, b[1] - e2, b[2] + (j + 1) * sz]];
+      }
+      for (let n = 0; n < 4; n++) paintHoverMesh.line(q[n], q[(n + 1) % 4], C);
+      paintHoverMesh.mode = gl.LINES;
+      $('#stHover').textContent = `${{ head: 'Head', body: 'Body', rarm: 'Right arm', larm: 'Left arm', rleg: 'Right leg', lleg: 'Left leg' }[hit.k]}${hit.layer === 'outer' ? ' (outer)' : ''} · pixel ${x}, ${y}`;
+    } else $('#stHover').textContent = '—';
+    redraw();
+  }
+
+  /* ---------- the flat 2D skin editor ---------- */
+  const c2d = () => $('#skin2d');
+  const REGIONS = () => {
+    const out = [];
+    for (const k of PART_KEYS) { const sp = spec(k); for (const [uv, lay] of [[sp.uv, 'base'], [sp.ov, 'outer']]) for (let f = 0; f < 6; f++) out.push({ k, lay, f, r: faceRect(sp, uv, f) }); }
+    return out;
+  };
+  function draw2d() {
+    const cv2 = c2d(); if (!cv2) return;
+    const g2 = cv2.getContext('2d'), Z = cv2.width / 64;
+    g2.clearRect(0, 0, cv2.width, cv2.height);
+    g2.fillStyle = '#1b1b20'; g2.fillRect(0, 0, cv2.width, cv2.height);
+    // checker in paintable areas
+    for (const R of REGIONS()) {
+      const vis = R.lay === 'base' ? partOn[R.k] : layerOn[R.k];
+      const [x, y, w, h] = R.r;
+      for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) { g2.fillStyle = (i + j) % 2 ? '#2c2c33' : '#26262c'; g2.fillRect((x + i) * Z, (y + j) * Z, Z, Z); }
+      if (!vis) { g2.fillStyle = 'rgba(0,0,0,.55)'; g2.fillRect(x * Z, y * Z, w * Z, h * Z); }
+    }
+    g2.imageSmoothingEnabled = false; g2.drawImage(skin, 0, 0, cv2.width, cv2.height);
+    if ($('#grid2d') && $('#grid2d').checked) {
+      g2.strokeStyle = 'rgba(0,0,0,.35)'; g2.lineWidth = 1;
+      for (const R of REGIONS()) { const [x, y, w, h] = R.r; for (let i = 0; i <= w; i++) { g2.beginPath(); g2.moveTo((x + i) * Z + .5, y * Z); g2.lineTo((x + i) * Z + .5, (y + h) * Z); g2.stroke(); } for (let j = 0; j <= h; j++) { g2.beginPath(); g2.moveTo(x * Z, (y + j) * Z + .5); g2.lineTo((x + w) * Z, (y + j) * Z + .5); g2.stroke(); } }
+    }
+    g2.strokeStyle = 'rgba(255,143,200,.55)'; g2.lineWidth = 1.5;
+    for (const R of REGIONS()) { const [x, y, w, h] = R.r; g2.strokeRect(x * Z + .5, y * Z + .5, w * Z - 1, h * Z - 1); }
+  }
+  function region2d(px, py) {
+    for (const R of REGIONS()) { const [x, y, w, h] = R.r; if (px >= x && py >= y && px < x + w && py < y + h) return R; }
+    return null;
+  }
+  let drag2d = false;
+  function paint2d(e, first) {
+    const cv2 = c2d(), r = cv2.getBoundingClientRect();
+    const px = Math.floor((e.clientX - r.left) / r.width * 64), py = Math.floor((e.clientY - r.top) / r.height * 64);
+    const R = region2d(px, py); if (!R) return;
+    if (R.lay === 'base' ? !partOn[R.k] : !layerOn[R.k]) return;
+    paintPixel({ k: R.k, layer: R.lay, f: R.f, px: [px, py] }, first);
+    updateSkinTex();
+  }
+  function wire2d() {
+    const cv2 = c2d(); if (!cv2) return;
+    cv2.addEventListener('pointerdown', e => { e.preventDefault(); cv2.setPointerCapture(e.pointerId); pushSkinUndo(); drag2d = true; paint2d(e, true); });
+    cv2.addEventListener('pointermove', e => {
+      const r = cv2.getBoundingClientRect(), px = Math.floor((e.clientX - r.left) / r.width * 64), py = Math.floor((e.clientY - r.top) / r.height * 64);
+      const R = region2d(px, py);
+      $('#stHover').textContent = R ? `${{ head: 'Head', body: 'Body', rarm: 'Right arm', larm: 'Left arm', rleg: 'Right leg', lleg: 'Left leg' }[R.k]}${R.lay === 'outer' ? ' (outer)' : ''} · pixel ${px}, ${py}` : '—';
+      if (drag2d && S.tool !== 'fill' && S.tool !== 'pick') paint2d(e, false);
+    });
+    cv2.addEventListener('pointerup', () => { drag2d = false; });
+    cv2.addEventListener('contextmenu', e => e.preventDefault());
+  }
+
+  /* ---------- skin actions ---------- */
+  function loadDefault(which) {
+    const i = new Image(); i.crossOrigin = 'anonymous';
+    i.onload = () => { pushSkinUndo(); loadSkinImage(i, which === 'alex'); toast(which === 'alex' ? 'Alex' : 'Steve', 'Loaded the default skin.', 'ok'); };
+    i.src = '/img/skins/' + which + '.png';
+  }
+  function clearSkin(all) {
+    pushSkinUndo();
+    if (all) sg.clearRect(0, 0, 64, 64);
+    else for (const R of REGIONS()) if (R.lay === 'outer') sg.clearRect(...R.r);
+    updateSkinTex();
+    toast(all ? 'Skin cleared' : 'Outer layer cleared', 'Ctrl+Z brings it back.');
+  }
+  function downloadSkin() { skin.toBlob(b => download(b, (S.name || 'skin').replace(/[^\w-]+/g, '_') + '_skin.png'), 'image/png'); }
+
+  function setMode(m) {
+    MODE = m; localStorage.setItem('kyoto.studio.mode', m);
+    $$('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+    document.body.classList.toggle('skinmode', m === 'skin');
+    $$('[data-pt]').forEach(b => b.hidden = !(b.dataset.for || 'both').split(' ').includes(m) && b.dataset.for !== undefined);
+    const first = $$('[data-pt]').find(b => !b.hidden && (m === 'skin' ? b.dataset.pt === 'skin' : b.dataset.pt === 'cosmetic'));
+    if (first) first.click();
+    $('#slotLabel').textContent = m === 'skin' ? 'Skin' : SLOT_NAMES[S.slot];
+    $('#kindLabel').textContent = m === 'skin' ? (paintLayer === 'base' ? 'Painting the base layer' : 'Painting the outer layer') : (S.kind === 'voxel' ? 'Voxel' : 'Picture');
+    $('#tools').style.opacity = m === 'skin' || S.kind === 'voxel' ? 1 : .35;
+    $('[data-tool=paint]').hidden = m === 'skin';
+    if (m === 'skin' && S.tool === 'paint') setTool('place');
+    setTool(S.tool);
+    hover = null; ghost.clear(); paintHoverMesh.clear(); paintHover = null;
+    if (m === 'skin') { cam.target = [0, 16, 0]; cam.dist = 50; }
+    else frameView();
+    draw2d(); redraw();
+  }
+
   /* ===================================================== mouse ===================================================== */
   let drag = null;
   cv.addEventListener('contextmenu', e => e.preventDefault());
@@ -423,6 +675,10 @@
     cv.setPointerCapture(e.pointerId);
     const orbit = e.button === 2 || e.button === 1 || (e.button === 0 && e.altKey);
     if (orbit) { drag = { mode: (e.shiftKey || e.button === 1) ? 'pan' : 'orbit', x: e.clientX, y: e.clientY, moved: false }; return; }
+    if (e.button === 0 && MODE === 'skin') {
+      if (anim) { $('#animate').checked = false; anim = false; }
+      pushSkinUndo(); drag = { mode: 'skin' }; paint3d(e, true); updatePaintHover(e); return;
+    }
     if (e.button === 0 && S.kind === 'voxel') {
       if (anim) { $('#animate').checked = false; anim = false; }
       pushUndo(); drag = { mode: 'edit' }; applyTool(e, true); updateHover(e);
@@ -438,19 +694,26 @@
       }
       redraw(); return;
     }
+    if (MODE === 'skin') {
+      if (drag && drag.mode === 'skin' && (S.tool === 'place' || S.tool === 'erase')) paint3d(e, false);
+      updatePaintHover(e); return;
+    }
     if (drag && drag.mode === 'edit' && (S.tool === 'erase' || S.tool === 'paint')) applyTool(e, false);
     updateHover(e);
   });
   cv.addEventListener('pointerup', () => { drag = null; });
-  cv.addEventListener('pointerleave', () => { hover = null; ghost.clear(); redraw(); });
+  cv.addEventListener('pointerleave', () => { hover = null; ghost.clear(); paintHover = null; paintHoverMesh.clear(); redraw(); });
   cv.addEventListener('wheel', e => { e.preventDefault(); cam.dist = clamp(cam.dist * Math.exp(e.deltaY * .0012), 6, 200); redraw(); }, { passive: false });
 
   /* ===================================================== UI ===================================================== */
   const TOOL_NAMES = { place: 'Place', erase: 'Erase', paint: 'Paint', pick: 'Pick colour', fill: 'Fill (bucket)' };
   const HINTS = { place: 'Left click: place a voxel', erase: 'Left click / drag: erase', paint: 'Left click / drag: paint', pick: 'Left click a voxel to use its colour', fill: 'Left click: repaint every touching voxel of that colour' };
+  const SKIN_TOOL_NAMES = { place: 'Pencil', erase: 'Eraser', paint: 'Pencil', pick: 'Pick colour', fill: 'Fill' };
+  const SKIN_HINTS = { place: 'Left click / drag: draw pixels', erase: 'Left click / drag: erase pixels', paint: 'Left click / drag: draw', pick: 'Left click: grab a colour from the skin', fill: 'Left click: fill an area of one colour (stays on that face)' };
   function setTool(t) {
     S.tool = t; $$('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
-    $('#stTool').textContent = TOOL_NAMES[t]; $('#hint').textContent = HINTS[t] + ' · Right drag: orbit · Shift + right drag: pan · Wheel: zoom';
+    const sk = typeof MODE !== 'undefined' && MODE === 'skin';
+    $('#stTool').textContent = (sk ? SKIN_TOOL_NAMES : TOOL_NAMES)[t]; $('#hint').textContent = (sk ? SKIN_HINTS : HINTS)[t] + ' · Right drag: orbit · Shift + right drag: pan · Wheel: zoom';
   }
   $$('[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
   $$('[data-toggle=symX]').forEach(b => b.onclick = () => { S.symX = !S.symX; b.classList.toggle('on', S.symX); toast(S.symX ? 'Symmetry on' : 'Symmetry off', S.symX ? 'Everything you do is mirrored left/right.' : ''); });
@@ -462,11 +725,17 @@
     if ((e.ctrlKey || e.metaKey) && k === 's') { e.preventDefault(); return act('export'); }
     const map = { p: 'place', e: 'erase', b: 'paint', i: 'pick', f: 'fill' };
     if (map[k]) setTool(map[k]);
-    if (k === 'm') $('[data-toggle=symX]').click();
+    if (k === 'm') { if (MODE === 'skin') { const c = $('#mirrorPaint'); c.checked = !c.checked; c.onchange({ target: c }); toast(c.checked ? 'Mirror on' : 'Mirror off', ''); } else $('[data-toggle=symX]').click(); }
     if (k === '.' || k === 'home') frameView();
   });
 
   function act(a) {
+    if (MODE === 'skin' && (a === 'undo' || a === 'redo' || a === 'clear')) {
+      if (a === 'undo' && skinUndo.length) { skinRedo.push(skinSnap()); sg.putImageData(skinUndo.pop(), 0, 0); updateSkinTex(); }
+      else if (a === 'redo' && skinRedo.length) { skinUndo.push(skinSnap()); sg.putImageData(skinRedo.pop(), 0, 0); updateSkinTex(); }
+      else if (a === 'clear') clearSkin(true);
+      return;
+    }
     if (a === 'undo' && undo.length) { redo.push(snap()); restore(undo.pop()); }
     else if (a === 'redo' && redo.length) { undo.push(snap()); restore(redo.pop()); }
     else if (a === 'clear') { if (!S.vox.size) return; pushUndo(); S.vox.clear(); changed(); toast('Cleared', 'Ctrl+Z brings it back.'); }
@@ -550,10 +819,27 @@
   $('#addSwatch').onclick = () => { if (!S.palette.includes(S.color)) { S.palette.push(S.color); if (S.palette.length > 48) S.palette.shift(); renderPalette(); save(); } };
 
   // character
-  function setArms(a) { arms = a; $$('[data-arms]').forEach(b => b.classList.toggle('on', b.dataset.arms === a)); localStorage.setItem('kyoto.builder.arms', a); buildPlayer(); redraw(); }
+  function setArms(a) { arms = a; $$('[data-arms]').forEach(b => b.classList.toggle('on', b.dataset.arms === a)); localStorage.setItem('kyoto.builder.arms', a); buildPlayer(); if (typeof draw2d === 'function' && skinTex) draw2d(); redraw(); }
   $$('[data-arms]').forEach(b => b.onclick = () => setArms(b.dataset.arms));
-  $$('[data-layer]').forEach(c => c.onchange = () => { layers[c.dataset.layer] = c.checked; redraw(); });
-  $$('[data-part]').forEach(c => c.onchange = () => { show[c.dataset.part] = c.checked; redraw(); });
+  function syncParts() { $$('[data-part]').forEach(c => { c.checked = partOn[c.dataset.part]; }); $$('[data-layer]').forEach(c => { c.checked = layerOn[c.dataset.layer]; }); }
+  $$('[data-part]').forEach(c => c.onchange = () => { partOn[c.dataset.part] = c.checked; draw2d(); redraw(); saveParts(); });
+  $$('[data-layer]').forEach(c => c.onchange = () => { layerOn[c.dataset.layer] = c.checked; draw2d(); redraw(); saveParts(); });
+  $$('[data-allparts]').forEach(b => b.onclick = () => { const v = b.dataset.allparts === 'on'; for (const k of PART_KEYS) { partOn[k] = v; layerOn[k] = v; } syncParts(); draw2d(); redraw(); saveParts(); });
+  $$('[data-alllayers]').forEach(b => b.onclick = () => { const v = b.dataset.alllayers === 'on'; for (const k of PART_KEYS) layerOn[k] = v; syncParts(); draw2d(); redraw(); saveParts(); });
+  function saveParts() { try { localStorage.setItem('kyoto.studio.parts', JSON.stringify({ partOn, layerOn })); } catch (e) { /* */ } }
+  try { const sp = JSON.parse(localStorage.getItem('kyoto.studio.parts') || 'null'); if (sp) { Object.assign(partOn, sp.partOn); Object.assign(layerOn, sp.layerOn); } } catch (e) { /* */ }
+  syncParts();
+  // skin mode controls
+  $$('[data-mode]').forEach(b => b.onclick = () => setMode(b.dataset.mode));
+  $$('[data-player]').forEach(b => b.onclick = () => { paintLayer = b.dataset.player; $$('[data-player]').forEach(x => x.classList.toggle('on', x === b)); setMode(MODE); });
+  $$('[data-brush]').forEach(b => b.onclick = () => { brush = Number(b.dataset.brush); $$('[data-brush]').forEach(x => x.classList.toggle('on', x === b)); });
+  $$('[data-skin]').forEach(b => b.onclick = () => loadDefault(b.dataset.skin));
+  if ($('#mirrorPaint')) $('#mirrorPaint').onchange = e => { mirrorPaint = e.target.checked; };
+  if ($('#grid2d')) $('#grid2d').onchange = draw2d;
+  if ($('#skinClearAll')) $('#skinClearAll').onclick = () => { if (confirm('Erase the whole skin? (Ctrl+Z undoes it)')) clearSkin(true); };
+  if ($('#skinClearOuter')) $('#skinClearOuter').onclick = () => clearSkin(false);
+  if ($('#skinDl')) $('#skinDl').onclick = downloadSkin;
+  wire2d();
   $('#animate').onchange = e => { anim = e.target.checked; t0 = performance.now(); redraw(); };
   $('#showGrid').onchange = redraw;
   $('#skinFile').onchange = e => { const f = e.target.files[0]; if (f) readImage(f).then(img => { loadSkinImage(img); toast('Skin loaded', f.name, 'ok'); }); e.target.value = ''; };
@@ -815,6 +1101,7 @@
     } else { setSlot('head', false); setKind('voxel'); }
     syncInputs(); setColor(S.color); buildVox(); buildLines(); buildPic(); frameView(); setTool('place');
     whoami();
+    setMode(MODE);
     if (!localStorage.getItem('kyoto.builder.seenHelp')) { localStorage.setItem('kyoto.builder.seenHelp', '1'); setTimeout(help, 400); }
     requestAnimationFrame(frame);
   }

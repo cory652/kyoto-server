@@ -3,18 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Kyoto Cosmetic Builder</title>
-<meta name="description" content="Build your own Minecraft cosmetics for Kyoto Client: voxel hats, wings, pictures and capes.">
+<title>Kyoto Studio</title>
+<meta name="description" content="Kyoto Studio: make Minecraft skins and build your own cosmetics (hats, wings, pictures, capes) for Kyoto Client.">
 <link rel="icon" href="/img/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/builder.css?v=1">
+<link rel="stylesheet" href="/assets/builder.css?v=2">
 </head>
 <body>
 <div id="app">
   <!-- top bar -->
   <header class="top">
-    <a class="logo" href="/"><img src="/img/logos/logo_k_starry.png" alt=""><b>Kyoto</b><span>Cosmetic Builder</span></a>
+    <a class="logo" href="/studio"><img src="/img/logos/logo_k_starry.png" alt=""><b>Kyoto</b><span>Studio</span></a>
+    <div class="modes"><button data-mode="skin">Skin</button><button data-mode="cosmetic">Cosmetic</button></div>
     <div class="menus">
       <button data-act="new">New</button>
       <label class="filebtn">Open<input type="file" id="openFile" accept=".kycos,application/json" hidden></label>
@@ -57,8 +58,29 @@
 
   <!-- properties -->
   <aside class="props">
-    <div class="ptabs" id="ptabs"><button class="on" data-pt="cosmetic">Cosmetic</button><button data-pt="colors">Colours</button><button data-pt="character">Character</button><button data-pt="cape">Cape</button></div>
+    <div class="ptabs" id="ptabs"><button data-pt="skin" data-for="skin">Skin</button><button class="on" data-pt="cosmetic" data-for="cosmetic">Cosmetic</button><button data-pt="colors" data-for="skin cosmetic">Colours</button><button data-pt="character" data-for="skin cosmetic">Body</button><button data-pt="cape" data-for="cosmetic">Cape</button></div>
     <div class="pbody" id="pbody">
+
+      <section data-pane="skin" hidden>
+        <h4>Paint on</h4>
+        <div class="seg" id="layerSeg"><button data-player="base" class="on">Base layer</button><button data-player="outer">Outer layer (3D)</button></div>
+        <h4>Brush</h4>
+        <div class="seg" id="brushSeg"><button data-brush="1" class="on">1 px</button><button data-brush="2">3 px</button><button data-brush="3">5 px</button></div>
+        <label class="row"><span>Mirror left / right</span><input type="checkbox" id="mirrorPaint"><i class="sw"></i></label>
+        <h4>Skin texture <small>(draw here too)</small></h4>
+        <canvas id="skin2d" width="512" height="512"></canvas>
+        <label class="row"><span>Pixel grid</span><input type="checkbox" id="grid2d" checked><i class="sw"></i></label>
+        <h4>Start from</h4>
+        <div class="seg"><button data-skin="steve">Steve (wide)</button><button data-skin="alex">Alex (slim)</button></div>
+        <div class="skinbtns" style="margin-top:8px"><label class="dropbtn sm"><input type="file" id="skinFile" accept="image/png" hidden><span>Import a skin PNG…</span></label>
+          <div class="namefetch"><input id="skinName" placeholder="Minecraft name" maxlength="16"><button class="mini" id="skinGo">Get</button></div></div>
+        <h4>Erase</h4>
+        <div class="duo2"><button class="pri ghost" id="skinClearOuter">Clear outer layer</button><button class="pri ghost danger" id="skinClearAll">Clear everything</button></div>
+        <h4>Save</h4>
+        <button class="pri wide" id="skinDl">Download skin PNG</button>
+        <p class="note">Upload it on minecraft.net (Profile → Skin) to wear it everywhere. Grid lines show every pixel you can draw on.</p>
+        <canvas id="skinPrev" width="64" height="64" hidden></canvas>
+      </section>
 
       <section data-pane="cosmetic">
         <h4>Type</h4>
@@ -109,22 +131,21 @@
       </section>
 
       <section data-pane="character" hidden>
-        <h4>Skin</h4>
-        <div class="skinrow"><canvas id="skinPrev" width="64" height="64"></canvas>
-          <div class="skinbtns"><label class="dropbtn sm"><input type="file" id="skinFile" accept="image/png" hidden><span>Import skin…</span></label>
-          <div class="namefetch"><input id="skinName" placeholder="Minecraft name" maxlength="16"><button class="mini" id="skinGo">Get</button></div></div></div>
         <h4>Arms</h4>
         <div class="seg" id="armSeg"><button data-arms="wide" class="on">Wide (Steve)</button><button data-arms="slim">Slim (Alex)</button></div>
-        <h4>Skin layers</h4>
-        <label class="row"><span>Hat</span><input type="checkbox" data-layer="hat" checked><i class="sw"></i></label>
-        <label class="row"><span>Jacket</span><input type="checkbox" data-layer="jacket" checked><i class="sw"></i></label>
-        <label class="row"><span>Sleeves</span><input type="checkbox" data-layer="sleeves" checked><i class="sw"></i></label>
-        <label class="row"><span>Pants</span><input type="checkbox" data-layer="pants" checked><i class="sw"></i></label>
-        <h4>Show body parts</h4>
-        <div class="partgrid">
-          <label class="pchk"><input type="checkbox" data-part="head" checked><span>Head</span></label><label class="pchk"><input type="checkbox" data-part="body" checked><span>Body</span></label>
-          <label class="pchk"><input type="checkbox" data-part="arms" checked><span>Arms</span></label><label class="pchk"><input type="checkbox" data-part="legs" checked><span>Legs</span></label>
+        <h4>Body parts <small>(click to hide)</small></h4>
+        <div class="bodymap">
+          <span></span><label class="bm"><input type="checkbox" data-part="head" checked><b>Head</b></label><span></span>
+          <label class="bm"><input type="checkbox" data-part="rarm" checked><b>Right arm</b></label><label class="bm"><input type="checkbox" data-part="body" checked><b>Body</b></label><label class="bm"><input type="checkbox" data-part="larm" checked><b>Left arm</b></label>
+          <span></span><div class="legs"><label class="bm"><input type="checkbox" data-part="rleg" checked><b>Right leg</b></label><label class="bm"><input type="checkbox" data-part="lleg" checked><b>Left leg</b></label></div><span></span>
         </div>
+        <h4>Outer layer (3D parts)</h4>
+        <div class="partgrid">
+          <label class="pchk"><input type="checkbox" data-layer="head" checked><span>Hat</span></label><label class="pchk"><input type="checkbox" data-layer="body" checked><span>Jacket</span></label>
+          <label class="pchk"><input type="checkbox" data-layer="rarm" checked><span>Right sleeve</span></label><label class="pchk"><input type="checkbox" data-layer="larm" checked><span>Left sleeve</span></label>
+          <label class="pchk"><input type="checkbox" data-layer="rleg" checked><span>Right pants</span></label><label class="pchk"><input type="checkbox" data-layer="lleg" checked><span>Left pants</span></label>
+        </div>
+        <div class="duo2" style="margin-top:8px"><button class="pri ghost" data-alllayers="off">Hide all 3D</button><button class="pri ghost" data-allparts="on">Show everything</button></div>
       </section>
 
       <section data-pane="cape" hidden>
@@ -148,6 +169,6 @@
 
 <div id="modal" hidden><div class="mcard"><button class="mx" data-close>✕</button><div id="mbody"></div></div></div>
 <div id="toasts"></div>
-<script src="/assets/builder.js?v=3"></script>
+<script src="/assets/builder.js?v=4"></script>
 </body>
 </html>

@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Playfair+Display:wght@600;800&family=Silkscreen&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/site.css?v=12">
-<link rel="stylesheet" href="/assets/home.css?v=2">
+<link rel="stylesheet" href="/assets/home.css?v=3">
 </head>
 <body>
 <div id="sky"><div id="art"></div><canvas id="stars"></canvas><div class="vignette"></div><div class="grain"></div></div>
@@ -32,22 +32,22 @@
           <button id="amLogout">__I_logout__ Log out</button>
         </div>
       </div>
-      <a class="btn sm dl" href="/#download" data-link>__I_download__ Download</a>
+      <a class="btn sm dl" href="/download" data-link>__I_download__ Download</a>
       <button class="menu-btn" id="menuBtn" aria-label="Menu"><span></span><span></span><span></span><b>Menu</b></button>
     </div>
   </div>
   <nav class="nav-sub">
-    <a href="/#news" data-link>News</a><a href="/#news" data-link data-tag="Update">Changelog</a><a href="/#features" data-link>Features</a>
-    <a href="/#hub" data-link>Hub</a><a href="/#profiles" data-link>Profiles</a><a href="/#faq" data-link>Support</a>
-    <a href="/#socials" data-link>Socials</a><a href="/builder">Builder</a><a href="/#plus" data-link class="plus-link">Kyoto+</a>
+    <a href="/news" data-link>News</a><a href="/changelog" data-link>Changelog</a><a href="/#features" data-link>Features</a><a href="/store" data-link>Store</a><a href="/studio" data-link>Studio</a>
+    <a href="/#hub" data-link>Hub</a><a href="/download#faq" data-link>Support</a>
+    <a href="/#socials" data-link>Socials</a><a href="/#plus" data-link class="plus-link">Kyoto+</a>
   </nav>
 </header>
 
 <div id="menu" hidden>
   <div class="menu-inner">
     <nav class="menu-links">
-      <a href="/#news" data-link>News</a><a href="/#features" data-link>Features</a><a href="/#screens" data-link>Video screens</a><a href="/#sky-time" data-link>Skies</a>
-      <a href="/#hub" data-link>Hub</a><a href="/#profiles" data-link>Profiles</a><a href="/#download" data-link>Download</a><a href="/builder">Cosmetic Builder</a><a href="/edit" data-link>Edit profile</a>
+      <a href="/news" data-link>News</a><a href="/changelog" data-link>Changelog</a><a href="/#features" data-link>Features</a><a href="/store" data-link>Store</a>
+      <a href="/studio" data-link>Kyoto Studio</a><a href="/download" data-link>Download</a><a href="/download#faq" data-link>Support</a><a href="/edit" data-link>Edit profile</a>
     </nav>
     <div class="menu-side"><img class="logo-k" src="/img/logos/logo_k_starry.png" alt=""><p>The best client is just a mod.</p><div class="soc" id="menuSoc"></div></div>
   </div>
@@ -63,7 +63,7 @@
       <h1 class="h2-title"><span>KYOTO</span> <span>CLIENT</span></h1>
       <p class="h2-sub">The best client is just a mod · Minecraft <b id="heroMc">26.3</b></p>
       <div class="h2-cta">
-        <a class="btn big glow" href="#download" data-scroll>__I_download__ Download</a>
+        <a class="btn big glow" href="/download" data-link>__I_download__ Download</a>
         <a class="btn big plus" href="#plus" data-scroll>__I_sparkles__ Kyoto+</a>
       </div>
       <div class="stats">
@@ -76,7 +76,7 @@
   </section>
 
   <section class="tiles" id="tiles">
-    <a class="tile" href="#download" data-scroll style="--img:url(/media/launcher.webp)"><small>One launcher, every version</small><b>Single<br>Install</b><span>Press Play. Fabric, Fabric API and Kyoto set themselves up.</span></a>
+    <a class="tile" href="/download" data-link style="--img:url(/media/launcher.webp)"><small>One launcher, every version</small><b>Single<br>Install</b><span>Press Play. Fabric, Fabric API and Kyoto set themselves up.</span></a>
     <a class="tile" href="#screens" data-scroll style="--img:url(/media/base.webp)"><small>Movie night in your world</small><b>Video<br>Screens</b><span>YouTube, Twitch, Kick and more, in sync with friends.</span></a>
     <a class="tile" href="#sky-time" data-scroll style="--img:url(/media/sky-night.webp)"><small>Galaxies, auroras, golden hour</small><b>Custom<br>Skies</b><span>Paint your own sky and pick your time of day.</span></a>
     <a class="tile" href="#hub" data-scroll style="--img:url(/media/hub.webp)"><small>Every Kyoto player</small><b>Kyoto<br>Hub</b><span>Chat, friends, calls, shared setups and capes.</span></a>
@@ -90,7 +90,7 @@
 
   <section class="newswrap" id="news">
     <div class="news-main">
-      <div class="news-head"><h2>News</h2><div class="ntabs" id="newsTabs"></div></div>
+      <div class="news-head"><h2>News</h2><a class="btn ghost sm" href="/news" data-link>All news __I_arrow__</a></div>
       <div class="news-grid" id="newsGrid"><div class="nskel big"></div><div class="nside"><div class="nskel"></div><div class="nskel"></div><div class="nskel"></div></div></div>
     </div>
     <aside class="socials" id="socials"><h4>Follow our socials</h4><div class="soc" id="socList"></div>
@@ -167,8 +167,38 @@
     <div class="phone reveal"><div class="pf-mini profile-root" id="pfMini"></div></div>
   </section>
 
-  <section id="download" class="section">
-    <div class="sec-head reveal"><span class="eyebrow">Download</span><h2>Up and running in a minute.</h2></div>
+  
+
+  
+
+  
+
+  
+</main>
+
+
+<!-- ======================= NEWS ======================= -->
+<main id="page-news" class="page subpage" hidden>
+  <header class="phero"><span class="eyebrow" id="newsEyebrow">News</span><h1 id="newsTitle">What's new in Kyoto</h1><p id="newsSub">Updates, events and announcements from the Kyoto team.</p>
+    <div class="ntabs big" id="newsPageTabs"></div></header>
+  <section class="npage" id="newsPage"></section>
+</main>
+
+<!-- ======================= STORE ======================= -->
+<main id="page-store" class="page subpage" hidden>
+  <header class="phero"><span class="eyebrow">Store</span><h1>Community cosmetics</h1><p>Capes and builds made by Kyoto players in Kyoto Studio. Every one of them is free to wear.</p>
+    <div class="phero-acts"><a class="btn glow" href="/studio" data-link>__I_sparkles__ Make your own</a><span class="coinpill">__I_coin__ Coins are coming soon</span></div></header>
+  <div class="sbar"><div class="ntabs big" id="storeKinds"><button class="on" data-sk="all">Everything</button><button data-sk="kycos">Builds</button><button data-sk="cape">Capes</button></div>
+    <div class="ntabs" id="storeSort"><button class="on" data-ss="top">Top</button><button data-ss="new">New</button></div></div>
+  <section class="sgrid" id="storeGrid"></section>
+</main>
+
+<!-- ======================= DOWNLOAD ======================= -->
+<main id="page-download" class="page subpage" hidden>
+  <header class="phero dl-hero"><span class="eyebrow">Download</span><h1>Get Kyoto Client</h1><p>Free forever. Press Play and the launcher sets up Fabric, Fabric API and Kyoto for you.</p>
+    <div class="dl-meta"><span>__I_monitor__ Windows 10 / 11</span><span>__I_layers__ Minecraft <b id="dlMc">26.3</b></span><span>__I_check__ Your own Minecraft account</span><span>__I_shield__ No ads, nothing bannable</span></div></header>
+<section id="download" class="section dl-page">
+    
     <div class="dl-grid">
       <div class="dl-card main reveal">
         <img src="/media/launcher.webp" alt="Kyoto Launcher">
@@ -181,28 +211,52 @@
       </div>
     </div>
   </section>
-
-  <section id="faq" class="section narrow">
+  <section class="steps">
+    <div class="step"><b>1</b><h4>Download the launcher</h4><p>Run <code>KyotoLauncher.exe</code>. Windows may ask if you trust it; click More info, then Run anyway.</p></div>
+    <div class="step"><b>2</b><h4>Pick your version</h4><p>Choose 26.x on the Home screen. Older versions are being ported and show as coming soon.</p></div>
+    <div class="step"><b>3</b><h4>Press Play</h4><p>Sign in with Microsoft the first time. Kyoto installs itself and keeps itself updated.</p></div>
+    <div class="step"><b>4</b><h4>Right Shift</h4><p>Opens the Kyoto menu in game. N opens waypoints, K the lyrics menu.</p></div>
+  </section>
+<section id="faq" class="section narrow">
     <div class="sec-head reveal"><span class="eyebrow">FAQ</span><h2>Questions</h2></div>
     <div class="faq" id="faqList"></div>
   </section>
+</main>
 
-  <section class="cta">
+<!-- ======================= KYOTO STUDIO ======================= -->
+<main id="page-studio" class="page subpage" hidden>
+  <header class="studio-hero">
+    <div class="sh-text"><span class="eyebrow">Kyoto Studio</span><h1>Make skins. Build cosmetics.<br><span class="grad">Wear them in seconds.</span></h1>
+      <p>A free 3D editor in your browser: paint your Minecraft skin pixel by pixel, build hats, wings and backpacks out of voxels, turn any GIF into an animated cape, and post it all to the Kyoto Hub.</p>
+      <div class="phero-acts"><a class="btn big glow" href="/builder">__I_sparkles__ Open Kyoto Studio</a><a class="btn big ghost" href="/store" data-link>Browse the Store</a></div></div>
+    <div class="sh-art"><img src="/media/studio.webp" alt="Kyoto Studio" loading="lazy"></div>
+  </header>
+  <section class="sfeat">
+    <article><i>__I_palette__</i><h3>Skin editor</h3><p>Draw on the 3D model or the flat texture with a pixel grid everywhere you can paint. Pencil, eraser, fill, colour picker and mirror.</p></article>
+    <article><i>__I_user__</i><h3>Steve or Alex</h3><p>Start from the default wide or slim skin, import yours by name or file, or clear everything and start from scratch.</p></article>
+    <article><i>__I_layers__</i><h3>Every part on its own</h3><p>Hide any arm, leg, the head or body, and each 3D layer (hat, jacket, sleeves, pants) separately to reach every pixel.</p></article>
+    <article><i>__I_box__</i><h3>Voxel cosmetics</h3><p>Hats, wings, backpacks and more. They follow your head, swing with your arms and legs, and other Kyoto players see them.</p></article>
+    <article><i>__I_cape__</i><h3>GIF to cape</h3><p>Drop any PNG or GIF and it's fitted to the cape shape. GIFs become animated capes.</p></article>
+    <article><i>__I_share__</i><h3>Wear it or share it</h3><p>Wear it instantly, export a .kycos file, or post it to the Hub and Store for everyone.</p></article>
+  </section>
+</main>
+
+<!-- shared footer (home, news, store, download, studio) -->
+<div id="siteFoot">
+<section class="cta">
     <img class="logo-k" src="/img/logos/logo_k_starry.png" alt="">
     <p><b>Video screens, synced lyrics, custom skies, free capes</b> and a Hub full of Kyoto players. It's completely free. What are you waiting for? Download today!</p>
-    <a class="btn big glow" href="#download" data-scroll>__I_download__ Download</a>
+    <a class="btn big glow" href="/download" data-link>__I_download__ Download</a>
   </section>
-
-  <footer class="foot2">
+<footer class="foot2">
     <div class="soc" id="footSoc"></div>
     <div class="f-row"><a class="brand" href="/" data-link><img class="logo-k" src="/img/logos/logo_k_starry.png" alt=""><span>KYOTO</span></a>
       <span class="f-copy">© <span id="year"></span> Kyoto Client</span>
-      <a href="/edit" data-link>Profile editor</a><a href="#download" data-scroll>Download</a><a href="#faq" data-scroll>Support</a><a id="footDiscord" href="#" target="_blank" rel="noopener">Discord</a>
+      <a href="/edit" data-link>Profile editor</a><a href="/download" data-link>Download</a><a href="/news" data-link>News</a><a href="/store" data-link>Store</a><a href="/studio" data-link>Kyoto Studio</a><a href="/download#faq" data-link>Support</a><a id="footDiscord" href="#" target="_blank" rel="noopener">Discord</a>
       <button class="theme-pill" id="themePill"></button>
       <span class="f-legal">Not affiliated with Mojang or Microsoft.</span></div>
   </footer>
-</main>
-
+</div>
 <!-- ======================= PROFILE EDITOR ======================= -->
 <main id="page-edit" class="page" hidden>
   <div class="login-wrap" id="loginWrap">
@@ -347,7 +401,8 @@
 
 <div id="toasts"></div>
 <script src="/assets/icons.js?v=12"></script>
-<script src="/assets/site.js?v=13"></script>
-<script src="/assets/home.js?v=1"></script>
+<script src="/assets/site.js?v=14"></script>
+<script src="/assets/home.js?v=2"></script>
+<script src="/assets/pages.js?v=1"></script>
 </body>
 </html>

@@ -375,3 +375,6 @@ body.menu-open { overflow: hidden; }
 .lightbox { position: fixed; inset: 0; z-index: 300; background: rgba(0, 0, 0, .85); display: grid; place-items: center; cursor: zoom-out; } .lightbox[hidden] { display: none; }
 .lightbox img { max-width: 92vw; max-height: 90vh; border-radius: 12px; }
 @media (max-width: 760px) { .hub { grid-template-columns: 1fr; } .hub-rail { flex-direction: row; overflow-x: auto; padding: 8px; } .hub-brand, .hub-me, .hub-threads { display: none; } }
+.dcstat { display: grid; gap: 2px; padding: 12px 14px; margin-bottom: 10px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255, 255, 255, .03); }
+.dcstat.ok { border-color: rgba(110, 231, 183, .35); } .dcstat.bad { border-color: rgba(255, 93, 122, .45); }
+.dcstat span { color: #c9ccd4; font-size: 13px; } .dcstat small { color: #ff8a9c; }

@@ -8,7 +8,7 @@
 <link rel="icon" href="/img/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/builder.css?v=2">
+<link rel="stylesheet" href="/assets/builder.css?v=3">
 </head>
 <body>
 <div id="app">
@@ -17,9 +17,12 @@
     <a class="logo" href="/studio"><img src="/img/logos/logo_k_starry.png" alt=""><b>Kyoto</b><span>Studio</span></a>
     <div class="modes"><button data-mode="skin">Skin</button><button data-mode="cosmetic">Cosmetic</button></div>
     <div class="menus">
+      <button data-act="home" id="homeBtn" hidden>← Home</button>
       <button data-act="new">New</button>
+      <button id="tplBtn">Templates</button>
       <label class="filebtn">Open<input type="file" id="openFile" accept=".kycos,application/json" hidden></label>
       <button data-act="export">Export .kycos</button>
+      <button id="tourBtn">Tutorial</button>
       <button data-act="help">Help</button>
     </div>
     <input id="cosName" class="namebox" value="My Cosmetic" maxlength="32" spellcheck="false" title="Name">
@@ -97,6 +100,11 @@
         <div id="voxelProps">
           <h4>Build space</h4>
           <div class="trio"><label>W<input type="number" id="gW" min="1" max="48"></label><label>H<input type="number" id="gH" min="1" max="48"></label><label>D<input type="number" id="gD" min="1" max="48"></label></div>
+          <h4>Shapes <small>(added in the middle, current colour)</small></h4>
+          <div class="shapes" id="shapes"><button data-shape="cube">Cube</button><button data-shape="sphere">Sphere</button><button data-shape="ring">Ring</button><button data-shape="cylinder">Cylinder</button><button data-shape="pyramid">Pyramid</button><button data-shape="line">Line</button></div>
+          <div class="duo"><label>Size<input type="number" id="shSize" value="6" min="1" max="24"></label><label class="row small"><span>Hollow</span><input type="checkbox" id="shHollow"><i class="sw"></i></label></div>
+          <h4>Move &amp; flip everything</h4>
+          <div class="xform" id="xform"><button data-mv="-1,0,0" title="Left">←</button><button data-mv="1,0,0" title="Right">→</button><button data-mv="0,1,0" title="Up">↑</button><button data-mv="0,-1,0" title="Down">↓</button><button data-mv="0,0,1" title="Forward">Fwd</button><button data-mv="0,0,-1" title="Back">Back</button><button data-xf="flip">Flip</button><button data-xf="rot">Turn 90°</button><button data-xf="recolor">Recolour</button><button data-xf="hollow">Hollow</button></div>
           <h4>Voxel size</h4>
           <div class="seg" id="vsSeg"><button data-vs="0.5">½ px</button><button data-vs="1" class="on">1 px</button><button data-vs="2">2 px</button></div>
           <h4>Move build space <small>(px)</small></h4>
@@ -169,6 +177,9 @@
 
 <div id="modal" hidden><div class="mcard"><button class="mx" data-close>✕</button><div id="mbody"></div></div></div>
 <div id="toasts"></div>
-<script src="/assets/builder.js?v=5"></script>
+<script>window.KS_HOOKS = window.KS_HOOKS || {}; window.KS_HOOKS.noHelp = true;</script>
+<script src="/assets/builder.js?v=6"></script>
+<script src="/assets/templates.js?v=1"></script>
+<script src="/assets/studio-plus.js?v=1"></script>
 </body>
 </html>

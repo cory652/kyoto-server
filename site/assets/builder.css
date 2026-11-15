@@ -130,3 +130,34 @@ code { font: 12px ui-monospace, monospace; }
 .bodymap > label:nth-child(5) b { min-height: 70px; } .bodymap > label:nth-child(4) b, .bodymap > label:nth-child(6) b { min-height: 70px; }
 .ptabs button[hidden] { display: none; }
 body.skinmode [data-toggle=symX] { opacity: .35; pointer-events: none; }
+
+/* ---- Studio extras: shapes, move/flip, templates, tutorial, login, posting ---- */
+.shapes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.shapes button, .xform button { padding: 7px 4px; border-radius: 7px; background: var(--p2); border: 1px solid var(--line); color: #d8dae0; font-weight: 600; font-size: 12px; transition: background .15s, border-color .15s; }
+.shapes button:hover, .xform button:hover { background: var(--p3); border-color: var(--acc); color: #fff; }
+.xform { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.xform [data-xf] { grid-column: span 2; } .xform [data-xf="hollow"], .xform [data-xf="recolor"] { grid-column: span 2; }
+.row.small { margin: 0; align-items: center; }
+.tpls { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; max-height: 60vh; overflow: auto; padding: 2px; }
+.tpl { display: grid; gap: 2px; padding: 10px; border-radius: 12px; background: var(--p2); border: 1px solid var(--line); text-align: left; transition: border-color .15s, transform .15s; }
+.tpl:hover { border-color: var(--acc); transform: translateY(-2px); }
+.tpl canvas { width: 100%; height: auto; border-radius: 8px; background: radial-gradient(circle at 50% 40%, #2c2640, #141418); margin-bottom: 6px; }
+.tpl b { font-size: 13px; } .tpl small { color: var(--mut); font-size: 11.5px; } .tpl i { font-style: normal; font-size: 10.5px; color: var(--acc); text-transform: uppercase; letter-spacing: .1em; }
+.mcard:has(.tpls) { width: min(820px, 94vw); }
+.recols { display: flex; flex-wrap: wrap; gap: 8px; } .recols button { width: 42px; height: 42px; border-radius: 10px; border: 2px solid #ffffff22; } .recols button:hover { border-color: #fff; }
+.sw1 { display: inline-block; width: 14px; height: 14px; border-radius: 4px; vertical-align: -2px; border: 1px solid #fff4; }
+.tour { position: fixed; inset: 0; z-index: 400; }
+.tour-hole { position: fixed; border-radius: 12px; box-shadow: 0 0 0 9999px rgba(6, 6, 10, .72), 0 0 0 2px var(--acc), 0 0 30px 4px rgba(255, 143, 200, .35); transition: all .35s cubic-bezier(.2, .8, .2, 1); pointer-events: none; }
+.tour-tip { position: fixed; width: 320px; padding: 16px 18px; border-radius: 16px; background: #22222a; border: 1px solid var(--line); box-shadow: 0 20px 60px rgba(0, 0, 0, .6); transition: left .35s cubic-bezier(.2, .8, .2, 1), top .35s cubic-bezier(.2, .8, .2, 1); }
+.tour-tip small { color: var(--acc); font-weight: 700; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+.tour-tip h3 { margin: 4px 0 6px; font: 700 17px Poppins; } .tour-tip p { margin: 0 0 14px; color: #cfd1d8; line-height: 1.55; }
+.tour-row { display: flex; gap: 6px; align-items: center; } .tour-row span { flex: 1; }
+.otp { display: flex; gap: 8px; margin: 6px 0 12px; } .otp input { width: 44px; height: 52px; text-align: center; font: 700 22px Poppins; background: var(--p2); border: 1px solid var(--line); border-radius: 10px; outline: none; }
+.otp input:focus { border-color: var(--acc); }
+.shots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 8px; }
+.shot { position: relative; padding: 0; border-radius: 10px; overflow: hidden; border: 2px solid transparent; opacity: .4; transition: opacity .15s, border-color .15s; }
+.shot.on { opacity: 1; border-color: var(--acc); } .shot img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
+.shot span { position: absolute; left: 6px; bottom: 6px; padding: 1px 6px; border-radius: 5px; background: #000a; font-size: 10.5px; font-weight: 700; }
+.pricebox2 { display: flex; align-items: center; gap: 10px; margin: 6px 0; } .pricebox2 > span { color: var(--mut); font-size: 12px; } .pricebox2 .seg { flex: 1; }
+.pricebox2 input { width: 100px; background: var(--p2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+.mcard:has(.shots) { width: min(620px, 94vw); }

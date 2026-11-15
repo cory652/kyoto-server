@@ -96,6 +96,10 @@
   /* ---------- Mods ---------- */
   async function pollMods() {
     const r = await api('/mod/queue');
+    let dc = null; try { dc = await api('/discord/status'); } catch (e) { /* older server */ }
+    const dcLine = !dc ? '' : `<div class="dcstat ${dc.lastError || dc.missing.length ? 'bad' : 'ok'}"><b>Discord bridge</b>
+      <span>Hub → Discord: ${dc.hubToDiscord ? 'on' : 'off'} · Discord → Hub: ${dc.discordToHub ? 'on' : 'off'}${dc.received ? ' · ' + dc.received + ' messages in' : ''}</span>
+      ${dc.missing.length ? `<small>Missing on Render: ${dc.missing.map(esc).join(', ')}</small>` : ''}${dc.lastError ? `<small>${esc(dc.lastError)}</small>` : ''}</div>`;
     $('#modDot').hidden = !(r.pending || []).length;
     const pend = (r.pending || []).map(p => `<article class="mq">
       <div class="mq-img">${p.photos ? `<img src="${CONFIG.api}/store/photo?id=${p.id}&n=0&auth=${encodeURIComponent(localStorage.getItem('kyoto.token'))}" alt="">` : p.hasImage ? `<img class="pix" src="${CONFIG.api}/hub/image?id=${p.id}&auth=${encodeURIComponent(localStorage.getItem('kyoto.token'))}" alt="">` : `<span>${esc(p.type)}</span>`}</div>
@@ -105,7 +109,7 @@
       <div class="mq-img">${x.target && x.target.chatImg ? `<img src="${CONFIG.api}/chat/img?id=${x.target.chatImg}" alt="">` : icon('flag')}</div>
       <div class="mq-b"><b>${esc(x.kind)} by ${esc((x.target || {}).name || '?')}</b><small>Reported by ${esc(x.byName)}: ${esc(x.reason || '')}</small><p>${esc((x.target || {}).text || (x.target && x.target.gone ? '(already deleted)' : ''))}</p></div>
       <div class="mq-a">${x.target && !x.target.gone ? `<button class="btn sm" data-rdel="${esc(x.id)}" data-kind="${esc(x.kind)}">Delete it</button>` : ''}<button class="btn sm ghost" data-dis="${x.at}" data-by="${esc(x.by)}">Dismiss</button></div></article>`).join('');
-    feed().innerHTML = `<div class="mods">
+    feed().innerHTML = `<div class="mods">${dcLine}
       <div class="mtool"><input id="modName" placeholder="Player name"><button class="btn sm" data-act="mute">Mute 1h</button><button class="btn sm" data-act="ban">Ban</button><button class="btn sm ghost" data-act="unban">Unban</button></div>
       <h3>Waiting for approval <span>${(r.pending || []).length}</span></h3>${pend || '<p class="muted small">Nothing to approve.</p>'}
       <h3>Reports <span>${(r.reports || []).length}</span></h3>${reps || '<p class="muted small">No reports. Nice.</p>'}</div>`;

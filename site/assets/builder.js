@@ -6,7 +6,9 @@
   /* ===================================================== basics ===================================================== */
   const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const API = /onrender\.com$|localhost|127\.0\.0\.1|kyotoclient/.test(location.hostname) ? location.origin : 'https://kyoto-server.onrender.com';
+  const HOOKS = window.KS_HOOKS || {}; // set by the Kyoto Studio app (studio-app.js) before this file loads
+  const ASSET = HOOKS.assets ?? '';
+  const API = HOOKS.server || (/onrender\.com$|localhost|127\.0\.0\.1|kyotoclient/.test(location.hostname) ? location.origin : 'https://kyoto-server.onrender.com');
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   function toast(t, s = '', k = '') {
     const el = document.createElement('div'); el.className = 'toast ' + k; el.innerHTML = `<b>${esc(t)}</b>${esc(s)}`;
@@ -127,7 +129,7 @@
   const sg = skin.getContext('2d');
   let skinTex = null;
   function defaultSkin() {
-    const i = new Image(); i.onload = () => loadSkinImage(i, false); i.onerror = () => drawnSkin(); i.src = '/img/skins/steve.png';
+    const i = new Image(); i.onload = () => loadSkinImage(i, false); i.onerror = () => drawnSkin(); i.src = ASSET + '/img/skins/steve.png';
   }
   function drawnSkin() {
     sg.clearRect(0, 0, 64, 64);
@@ -302,7 +304,7 @@
     const w = Math.round(r.width * d), h = Math.round(r.height * d);
     if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; redraw(); }
   }
-  function frame(now) {
+  function frame(now, once) {
     resize();
     if (needs || anim) {
       needs = false;
@@ -347,7 +349,7 @@
         gl.depthMask(true);
       }
     }
-    requestAnimationFrame(frame);
+    if (!once) requestAnimationFrame(frame);
   }
 
   /* ===================================================== picking ===================================================== */
@@ -638,7 +640,7 @@
   function loadDefault(which) {
     const i = new Image(); i.crossOrigin = 'anonymous';
     i.onload = () => { pushSkinUndo(); loadSkinImage(i, which === 'alex'); toast(which === 'alex' ? 'Alex' : 'Steve', 'Loaded the default skin.', 'ok'); };
-    i.src = '/img/skins/' + which + '.png';
+    i.src = ASSET + '/img/skins/' + which + '.png';
   }
   function clearSkin(all) {
     pushSkinUndo();
@@ -744,6 +746,7 @@
     else if (a === 'post') post();
     else if (a === 'wear') wear();
     else if (a === 'help') help();
+    else if (a === 'home' && HOOKS.home) HOOKS.home();
   }
   $$('[data-act]').forEach(b => b.onclick = () => act(b.dataset.act));
 
@@ -966,7 +969,7 @@
     if (!me) return needLogin();
     const b = await capePng(); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = (capeName || 'cape') + (capeFrames > 1 ? '.gif' : '.png'); a.click();
     modal(`<h2>Post your cape to the Store</h2><p>Your cape file just downloaded in Minecraft's cape layout (HD). Open the Store, press <b>Post a cosmetic</b>, choose <b>Cape</b> and pick that file.</p>
-      <div class="mrow"><button class="pri ghost" data-close>Later</button><a class="pri" href="/store?sell=1" target="_blank" style="text-decoration:none">Open the Store</a></div>`);
+      <div class="mrow"><button class="pri ghost" data-close>Later</button><a class="pri" href="${API}/store?sell=1" target="_blank" style="text-decoration:none">Open the Store</a></div>`);
   };
   const _oldCapePost = async () => {
     if (!me) return needLogin();
@@ -994,6 +997,7 @@
   function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
   function exportFile() {
     if (!validate()) return;
+    if (HOOKS.exportFile) return HOOKS.exportFile();
     const name = (S.name || 'cosmetic').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') || 'cosmetic';
     download(new Blob([JSON.stringify(exportData())], { type: 'application/json' }), name + '.kycos');
     modal(`<h2>Exported ${esc(name)}.kycos</h2><p>To wear it in game:</p><ol>
@@ -1039,29 +1043,41 @@
   /* ===================================================== account ===================================================== */
   let me = null;
   async function whoami() {
-    if (!localStorage.getItem('kyoto.token')) { $('#who').innerHTML = '<a href="/edit">Log in</a> to wear or post'; return; }
+    if (!localStorage.getItem('kyoto.token')) { $('#who').innerHTML = '<a href="/edit" data-login>Log in</a> to wear or post'; wireLogin(); return; }
     let cached = null; try { cached = JSON.parse(localStorage.getItem('kyoto.me') || 'null'); } catch (e) { /* */ }
     const showMe = m => { $('#who').innerHTML = `<img src="https://mc-heads.net/avatar/${encodeURIComponent(m.name)}/32" alt="" style="width:20px;height:20px;border-radius:5px;vertical-align:-5px;margin-right:6px;image-rendering:pixelated">${esc(m.name)}`; };
     if (cached) { me = cached; showMe(cached); }
     try { me = await api('/me'); localStorage.setItem('kyoto.me', JSON.stringify({ name: me.name, uuid: me.uuid, plus: !!me.plus })); showMe(me); }
-    catch (e) { if (e.status === 401 || !cached) { me = null; localStorage.removeItem('kyoto.me'); $('#who').innerHTML = '<a href="/edit">Log in</a> to wear or post'; } }
+    catch (e) { if (e.status === 401 || !cached) { me = null; localStorage.removeItem('kyoto.me'); $('#who').innerHTML = '<a href="/edit" data-login>Log in</a> to wear or post'; wireLogin(); } }
+  }
+  function wireLogin() {
+    const a = $('[data-login]'); if (a && HOOKS.login) a.onclick = e => { e.preventDefault(); HOOKS.login(); };
   }
   function needLogin() {
+    if (HOOKS.login) return HOOKS.login();
     modal(`<h2>Log in first</h2><p>In Minecraft with Kyoto, type <code>/kyoto link</code>, then enter the code on the website's <b>Edit profile</b> page. Come back here after and you're set. Your cosmetic is autosaved.</p>
       <div class="mrow"><a class="pri" href="/edit" style="text-decoration:none">Log in</a></div>`);
   }
   async function wear() {
+    if (MODE === 'skin') {
+      if (!me) return needLogin();
+      try { await api('/skin', { method: 'PUT', body: { skin: skin.toDataURL('image/png').split(',')[1], slim: arms === 'slim' } }); toast('Skin on!', 'Kyoto players see it in game within a minute. Press F5 to see yourself.', 'ok'); }
+      catch (e) { toast('Couldn\'t wear it', e.message, 'bad'); }
+      return;
+    }
     if (!validate()) return; if (!me) return needLogin();
     try { await api('/kycos', { method: 'PUT', body: { data: JSON.stringify(exportData()) } }); toast('You\'re wearing it', `${S.name} on your ${SLOT_NAMES[S.slot].toLowerCase()}. It shows in game within a minute (F5 to see yourself).`, 'ok'); }
     catch (e) { toast('Couldn\'t wear it', e.message, 'bad'); }
   }
   function post() {
+    if (MODE === 'skin' && HOOKS.post) return HOOKS.post();
     if (!validate()) return; if (!me) return needLogin();
+    if (HOOKS.post) return HOOKS.post();
     // the .kycos file is only for posting: save it, then open the Store's post form
     exportFile();
     modal(`<h2>Post it to the Kyoto Store</h2><p>Your <b>.kycos</b> file just downloaded. On the Store page, add a name, description, price (or free) and a few photos of it in game, then pick that file.</p>
       <ol class="steps2"><li>Wear it first (<b>Wear</b> button) and take screenshots in game with F5 + F2.</li><li>Open the Store and press <b>Post a cosmetic</b>.</li><li>Pick the .kycos file + your screenshots.</li></ol>
-      <div class="mrow"><button class="pri ghost" data-close>Later</button><a class="pri" href="/store?sell=1" target="_blank" style="text-decoration:none">Open the Store</a></div>`);
+      <div class="mrow"><button class="pri ghost" data-close>Later</button><a class="pri" href="${API}/store?sell=1" target="_blank" style="text-decoration:none">Open the Store</a></div>`);
   }
   function help() {
     modal(`<h2>How the builder works</h2><ul>
@@ -1084,6 +1100,7 @@
         localStorage.setItem('kyoto.builder', JSON.stringify({ name: S.name, slot: S.slot, kind: S.kind, mirror: S.mirror, n: S.n, vs: S.vs, center: S.center, vox: [...S.vox], color: S.color, palette: S.palette, pic: S.pic, picSize: S.picSize, picOff: S.picOff, picRot: S.picRot }));
         $('#stSaved').textContent = 'Autosaved ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
       } catch (e) { $('#stSaved').textContent = 'Too big to autosave - export it'; }
+      if (HOOKS.onSave) HOOKS.onSave();
     }, 400);
   }
   function reset() {
@@ -1091,6 +1108,18 @@
     undo.length = 0; redo.length = 0;
     setSlot('head', false); setKind('voxel'); syncInputs(); buildVox(); buildPic(); save();
   }
+  /** Everything the Studio extras (studio-plus.js) and the desktop app need. */
+  window.KS = {
+    S, key, PALETTE0, SLOT_DEF, SLOT_NAMES, cam, canvas: cv, skin, partOn, layerOn,
+    toast, modal, closeModal, api, esc, pushUndo, changed, exportData, loadKycos, validate, frameView, redraw, save,
+    setSlot, setKind, syncInputs, renderPalette, buildLines, buildVox, buildPic, setColor, setMode, setArms, whoami, loadSkinImage,
+    getMode: () => MODE, getArms: () => arms, me: () => me, setAnim: on => { anim = on; $('#animate').checked = on; redraw(); },
+    renderNow: () => { needs = true; frame(performance.now(), true); },
+    skinPng: () => skin.toDataURL('image/png'),
+    loadSkinUrl: (url, slim) => new Promise(res => { const i = new Image(); i.onload = () => { loadSkinImage(i, slim); res(true); }; i.onerror = () => res(false); i.src = url; }),
+    state: () => ({ name: S.name, slot: S.slot, kind: S.kind, mirror: S.mirror, n: S.n, vs: S.vs, center: S.center, vox: [...S.vox], color: S.color, palette: S.palette, pic: S.pic, picSize: S.picSize, picOff: S.picOff, picRot: S.picRot, mode: MODE, arms, skin: skin.toDataURL('image/png') }),
+    loadState: st => { localStorage.setItem('kyoto.builder', JSON.stringify(st)); if (st.skin) localStorage.setItem('kyoto.builder.skin', st.skin); else localStorage.removeItem('kyoto.builder.skin'); if (st.arms) localStorage.setItem('kyoto.builder.arms', st.arms); if (st.mode) { MODE = st.mode; localStorage.setItem('kyoto.studio.mode', st.mode); } }
+  };
   function start() {
     let saved = null; try { saved = JSON.parse(localStorage.getItem('kyoto.builder') || 'null'); } catch (e) { /* */ }
     const sk = localStorage.getItem('kyoto.builder.skin');
@@ -1104,13 +1133,18 @@
     syncInputs(); setColor(S.color); buildVox(); buildLines(); buildPic(); frameView(); setTool('place');
     whoami();
     setMode(MODE);
-    if (!localStorage.getItem('kyoto.builder.seenHelp')) { localStorage.setItem('kyoto.builder.seenHelp', '1'); setTimeout(help, 400); }
+    if (!localStorage.getItem('kyoto.builder.seenHelp') && !HOOKS.noHelp) { localStorage.setItem('kyoto.builder.seenHelp', '1'); setTimeout(help, 400); }
     requestAnimationFrame(frame);
+    window.KS.started = true;
+    document.dispatchEvent(new Event('ks-ready'));
   }
   $$('[data-cam]').forEach(b => b.onclick = () => {
     const v = b.dataset.cam;
     if (v === 'reset') return frameView();
     cam.yaw = { front: 0, side: -Math.PI / 2, back: Math.PI, top: cam.yaw }[v]; cam.pitch = v === 'top' ? 1.4 : .12; redraw();
   });
-  start();
+  // the desktop app loads the project from disk first
+  // (and waits for the rest of the page's scripts, so the extras are hooked in before it starts)
+  const domReady = () => document.readyState === 'loading' ? new Promise(r => document.addEventListener('DOMContentLoaded', r, { once: true })) : null;
+  Promise.resolve(domReady()).then(() => HOOKS.beforeStart ? HOOKS.beforeStart(window.KS) : null).catch(() => {}).then(start);
 })();

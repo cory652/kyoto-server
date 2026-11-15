@@ -260,7 +260,7 @@ function cleanStr(v, max) { return String(v || '').replace(/[\u0000-\u001f]/g, '
 function mediaFile(uuid, kind) { return path.join(MEDIA, `${uuid.replace(/[^a-f0-9-]/g, '')}_${kind}`); }
 const int = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, Math.round(n))) : d; };
 const hex = (v, d) => /^#[0-9a-f]{6}$/i.test(String(v || '')) ? String(v).toLowerCase() : d;
-function hubBlocked(t) { return blocked(t); }
+function hubBlocked(t) { return blocked(t) || FILTER.isBad(t); } // profiles + names: bad words aren't allowed at all
 function linkSafe(l) {
   const u = String(l).toLowerCase();
   if (u.includes('.onion') || /^(https?:\/\/)?\d{1,3}(\.\d{1,3}){3}/.test(u)) return false;
@@ -417,15 +417,16 @@ function safeLink(u) {
   const host = u.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
   return SAFE_SITES.some(s => host === s || host.endsWith('.' + s));
 }
+const FILTER = require('./filter');
+// Bad words don't block a message any more: they're tagged out with #### (filter.js catches "F u c k", f.u.c.k, f*ck, sh1t...).
+// Only dark-web links still get a message refused.
 function blocked(t) {
-  const low = String(t || '').toLowerCase();
-  return BLOCK_RX.some(r => r.test(low)) || low.includes('.onion') || low.includes('porn') || low.includes('hentai');
+  return String(t || '').toLowerCase().includes('.onion');
 }
 function clean(t, max) {
-  let s = String(t || '').replace(/[\u0000-\u001f‮​]/g, ' ').slice(0, max).trim();
+  let s = String(t || '').replace(/[\u0000-\u001f\u202e\u200b-\u200f\u2060\ufeff]/g, '').slice(0, max).trim();
   s = s.replace(URL_RX, m => safeLink(m) ? m : '[link removed]');
-  for (const r of MASK_RX) s = s.replace(r, '***');
-  return s;
+  return FILTER.tag(s);
 }
 const nameOf = u => (db.users[u] || {}).name || '?';
 const isOwnerUuid = u => OWNERS.includes(nameOf(u).toLowerCase());
@@ -571,11 +572,17 @@ function toDiscord(m) {
     .catch(e => console.warn('discord webhook', e.message));
 }
 let discordAfter = db.discordAfter || '';
+const discordState = { lastPoll: 0, lastOk: 0, lastError: '', received: 0 };
 async function pollDiscord() {
   if (!DISCORD_BOT || !DISCORD_CHANNEL) return;
+  discordState.lastPoll = Date.now();
   try {
     const r = await fetch(`https://discord.com/api/v10/channels/${DISCORD_CHANNEL}/messages?limit=20${discordAfter ? '&after=' + discordAfter : ''}`, { headers: { Authorization: 'Bot ' + DISCORD_BOT } });
-    if (!r.ok) { if (r.status !== 429) console.warn('discord poll', r.status); return; }
+    if (!r.ok) {
+      discordState.lastError = r.status === 401 ? 'Bot token is wrong (401)' : r.status === 403 ? 'The bot can\'t see that channel (403): give it View Channel + Read Message History' : r.status === 404 ? 'Channel ID is wrong (404)' : 'Discord said ' + r.status;
+      if (r.status !== 429) console.warn('discord poll', r.status); return;
+    }
+    discordState.lastOk = Date.now(); discordState.lastError = '';
     const msgs = (await r.json()).sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1));
     const first = !discordAfter;
     for (const d of msgs) {
@@ -584,20 +591,27 @@ async function pollDiscord() {
       if (d.webhook_id && d.webhook_id === webhookId) continue; // our own Hub messages
       if (d.author && d.author.bot) continue;
       let text = String(d.content || '').replace(/<a?:(\w+):\d+>/g, ':$1:').replace(/<@!?\d+>/g, '@someone').replace(/[\u0000-\u001f]/g, ' ').slice(0, 300);
-      if (blocked(text)) continue;
+      text = clean(text, 300);
       const att = (d.attachments || []).find(a => /^image\//.test(a.content_type || '') && a.size < 3000000);
       let img = null;
       if (att) {
         try { const buf = Buffer.from(await (await fetch(att.url)).arrayBuffer()); if (imgKind(buf)) { img = crypto.randomBytes(9).toString('hex'); fs.writeFileSync(path.join(HUB_IMG, 'c' + img), buf); } } catch (e) { /* skip picture */ }
       }
+      if (!d.content && !(d.attachments || []).length && !(d.embeds || []).length && !(d.sticker_items || []).length) discordState.lastError = 'Messages arrive empty: turn on Message Content Intent (Discord Developer Portal > Bot)';
       if (!text && !img) continue;
       const a = d.author || {};
+      discordState.received++;
       pushChat({ id: H.seq++, src: 'discord', dname: (a.global_name || a.username || 'Discord').slice(0, 32), davatar: a.avatar ? `https://cdn.discordapp.com/avatars/${a.id}/${a.avatar}.png?size=64` : '', text, img, at: Date.now() });
     }
     if (db.discordAfter !== discordAfter) { db.discordAfter = discordAfter; save(); }
   } catch (e) { console.warn('discord poll', e.message); }
 }
-if (DISCORD_BOT && DISCORD_CHANNEL) { setInterval(pollDiscord, 4000); console.log('Discord -> Hub bridge on'); }
+if (DISCORD_BOT && DISCORD_CHANNEL) { setInterval(pollDiscord, 4000); pollDiscord(); console.log('Discord -> Hub bridge on'); }
+routes['GET /discord/status'] = async (req, res, body, me) => {
+  if (!isStaff(me)) return fail(res, 403, 'Staff only');
+  send(res, 200, { hubToDiscord: !!DISCORD_WEBHOOK, discordToHub: !!(DISCORD_BOT && DISCORD_CHANNEL), missing: [!DISCORD_WEBHOOK && 'DISCORD_WEBHOOK', !DISCORD_BOT && 'DISCORD_BOT_TOKEN', !DISCORD_CHANNEL && 'DISCORD_CHANNEL_ID'].filter(Boolean),
+    lastOk: discordState.lastOk, lastError: discordState.lastError, received: discordState.received });
+};
 if (DISCORD_WEBHOOK) console.log('Hub -> Discord bridge on');
 const dmKey = (a, b) => [a, b].sort().join(':');
 routes['GET /dm/threads'] = async (req, res, body, me) => {
@@ -790,7 +804,7 @@ routes['POST /blox/np'] = async (req, res, body) => {
   const prev = BLOX_NP.get(id) || {};
   const e = { key, title: cleanStr(body.title, 120), artist: cleanStr(body.artist, 120), playing: !!body.playing, pos: Math.max(0, Number(body.pos) || 0),
     dur: Math.max(0, Number(body.dur) || 0), song: cleanStr(body.song, 16), seen: Date.now(), lines: prev.song === cleanStr(body.song, 16) ? prev.lines : [] };
-  if (Array.isArray(body.lines)) e.lines = body.lines.slice(0, 400).filter(l => Array.isArray(l)).map(l => [Math.max(0, Number(l[0]) || 0), hubBlocked(String(l[1] || '')) ? '***' : cleanStr(l[1], 140)]);
+  if (Array.isArray(body.lines)) e.lines = body.lines.slice(0, 400).filter(l => Array.isArray(l)).map(l => [Math.max(0, Number(l[0]) || 0), cleanStr(FILTER.tag(String(l[1] || '')), 140)]);
   BLOX_NP.set(id, e);
   send(res, 200, { ok: true, needLines: !!e.song && !e.lines.length });
 };
@@ -970,7 +984,7 @@ function checkKycos(raw) {
   let d; try { d = JSON.parse(str); } catch (e) { return { error: 'Not a .kycos file' }; }
   if (d.format !== 'kycos') return { error: 'Not a .kycos file' };
   if (!KYCOS_SLOTS.includes(d.slot)) return { error: 'Capes are uploaded as capes. Pick head, back, arm or leg.' };
-  if (blocked(String(d.name || ''))) return { error: 'That name isn\'t allowed' };
+  if (FILTER.isBad(String(d.name || ''))) return { error: 'That name isn\'t allowed' };
   const out = { format: 'kycos', version: 1, name: cleanStr(d.name || 'Cosmetic', 32), author: cleanStr(d.author || '', 16), slot: d.slot, kind: d.kind === 'texture' ? 'texture' : 'voxel', mirror: !!d.mirror };
   const nums = (a, n, lo, hi) => Array.isArray(a) && a.length === n && a.every(v => Number.isFinite(v) && v >= lo && v <= hi);
   if (out.kind === 'voxel') {

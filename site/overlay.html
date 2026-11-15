@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kyoto Client - stream overlay</title>
+<!--
+  OBS / TikTok LIVE Studio: add a Browser Source with this URL, 1920x1080. The background is transparent.
+  Options (add to the URL):
+    ?every=8      minutes between ads (default 8, 0 = always on)
+    ?show=14      seconds the ad stays up (default 14)
+    ?pos=br       corner: br, bl, tr, tl, or bottom (centered)
+    ?code=hef     your creator code / name shown on the card
+    ?test=1       show it right away
+-->
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden; font-family: "Poppins", "Segoe UI", system-ui, sans-serif; }
+  .wrap { position: fixed; padding: 56px; }
+  .br { right: 0; bottom: 0; } .bl { left: 0; bottom: 0; } .tr { right: 0; top: 0; } .tl { left: 0; top: 0; }
+  .bottom { left: 50%; bottom: 0; transform: translateX(-50%); }
+  .card {
+    position: relative; width: 560px; height: 150px; border-radius: 26px; overflow: hidden;
+    background: radial-gradient(120% 140% at 0% 0%, #2a1840 0%, #110c1d 55%, #07060c 100%);
+    box-shadow: 0 30px 80px rgba(0,0,0,.55), 0 0 0 1.5px rgba(255,255,255,.09) inset;
+    display: flex; align-items: center; gap: 22px; padding: 0 28px; box-sizing: border-box;
+    opacity: 0; transform: translateY(40px) scale(.92); filter: blur(6px);
+    transition: opacity .55s cubic-bezier(.2,.8,.2,1), transform .7s cubic-bezier(.2,1.4,.3,1), filter .5s;
+  }
+  .card.on { opacity: 1; transform: none; filter: none; }
+  .card.out { opacity: 0; transform: translateY(24px) scale(.96); filter: blur(4px); transition-duration: .45s; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .glow { position: absolute; width: 260px; height: 260px; left: -60px; top: -80px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,130,200,.35), transparent 65%); animation: drift 7s ease-in-out infinite alternate; }
+  @keyframes drift { to { transform: translate(60px, 30px); } }
+  .logo { position: relative; width: 96px; height: 96px; border-radius: 24px; flex: none;
+    box-shadow: 0 10px 30px rgba(255,120,200,.35); animation: bob 3.2s ease-in-out infinite; }
+  @keyframes bob { 50% { transform: translateY(-4px) rotate(-2deg); } }
+  .txt { position: relative; color: #fff; min-width: 0; }
+  .eyebrow { font-size: 15px; letter-spacing: .22em; font-weight: 700; color: #ff9fd6; text-transform: uppercase; }
+  .title { font-size: 40px; font-weight: 800; line-height: 1.05; margin-top: 4px; white-space: nowrap; }
+  .title span { background: linear-gradient(90deg, #fff, #ffd1ec 40%, #c8b4ff 70%, #fff); background-size: 200% 100%;
+    -webkit-background-clip: text; background-clip: text; color: transparent; animation: sheen 3.5s linear infinite; }
+  @keyframes sheen { to { background-position: -200% 0; } }
+  .sub { font-size: 19px; color: #cfc8dd; margin-top: 8px; white-space: nowrap; }
+  .sub b { color: #fff; }
+  .bar { position: absolute; left: 0; bottom: 0; height: 4px; width: 100%;
+    background: linear-gradient(90deg, #ff7ac3, #b18cff); transform-origin: left; }
+  .card.on .bar { animation: bar var(--show) linear forwards; }
+  @keyframes bar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  .always .bar { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <div class="card" id="card">
+    <canvas id="stars"></canvas>
+    <div class="glow"></div>
+    <img class="logo" src="/img/logos/logo_k_starry.png" alt="">
+    <div class="txt">
+      <div class="eyebrow">Playing on</div>
+      <div class="title"><span>Kyoto Client</span></div>
+      <div class="sub" id="sub">Free Minecraft client &middot; <b>kyotoclient.cc</b></div>
+    </div>
+    <div class="bar"></div>
+  </div>
+</div>
+<script>
+  const q = new URLSearchParams(location.search);
+  const every = Math.max(0, Number(q.get('every') ?? 8));
+  const show = Math.max(4, Math.min(120, Number(q.get('show') ?? 14)));
+  const pos = ['br', 'bl', 'tr', 'tl', 'bottom'].includes(q.get('pos')) ? q.get('pos') : 'br';
+  const code = (q.get('code') || '').replace(/[^\w .-]/g, '').slice(0, 20);
+  const wrap = document.getElementById('wrap'), card = document.getElementById('card');
+  wrap.classList.add(pos);
+  card.style.setProperty('--show', show + 's');
+  const lines = [
+    'Free Minecraft client &middot; <b>kyotoclient.cc</b>',
+    'Free capes, lyrics in the sky &amp; more',
+    code ? `Download it &middot; tell them <b>${code}</b> sent you` : 'Download free at <b>kyotoclient.cc</b>'
+  ];
+  const sub = document.getElementById('sub');
+
+  // light starfield: one small canvas, ~40 stars, paused while hidden
+  const cv = document.getElementById('stars'), cx = cv.getContext('2d');
+  let stars = [], running = false;
+  function size() { cv.width = card.clientWidth * devicePixelRatio; cv.height = card.clientHeight * devicePixelRatio; }
+  function seed() { stars = Array.from({ length: 42 }, () => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.4 + .3, t: Math.random() * 6, s: Math.random() * .6 + .2 })); }
+  function frame(now) {
+    if (!running) return;
+    cx.clearRect(0, 0, cv.width, cv.height);
+    for (const s of stars) {
+      const a = .35 + .65 * Math.abs(Math.sin(now / 900 * s.s + s.t));
+      cx.globalAlpha = a; cx.fillStyle = '#fff';
+      cx.beginPath(); cx.arc(s.x * cv.width, s.y * cv.height, s.r * devicePixelRatio, 0, 7); cx.fill();
+    }
+    requestAnimationFrame(frame);
+  }
+  size(); seed();
+
+  let li = 0, cycle = null;
+  function showAd() {
+    running = true; requestAnimationFrame(frame);
+    sub.innerHTML = lines[li % lines.length];
+    card.classList.remove('out'); void card.offsetWidth; card.classList.add('on');
+    if (every === 0) { card.classList.add('always'); cycle = setInterval(() => { li++; sub.style.opacity = 0; setTimeout(() => { sub.innerHTML = lines[li % lines.length]; sub.style.opacity = 1; }, 300); }, 6000); sub.style.transition = 'opacity .3s'; return; }
+    const step = setInterval(() => { li++; sub.innerHTML = lines[li % lines.length]; }, show * 1000 / 3);
+    setTimeout(() => { clearInterval(step); card.classList.remove('on'); card.classList.add('out'); setTimeout(() => { running = false; }, 600); }, show * 1000);
+  }
+  if (every === 0 || q.get('test')) showAd();
+  if (every > 0) setInterval(showAd, every * 60000);
+  if (every > 0 && !q.get('test')) setTimeout(showAd, 4000);
+</script>
+</body>
+</html>

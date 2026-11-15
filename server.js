@@ -65,7 +65,9 @@ function readBody(req, limit) {
     req.on('data', c => { size += c.length; if (size > limit) { reject(new Error('too big')); req.destroy(); } else chunks.push(c); });
     req.on('end', () => {
       if (!chunks.length) return resolve({});
-      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch (e) { reject(new Error('bad json')); }
+      const raw = Buffer.concat(chunks).toString('utf8');
+      if (/application\/x-www-form-urlencoded/i.test(req.headers['content-type'] || '')) return resolve(Object.fromEntries(new URLSearchParams(raw)));
+      try { resolve(JSON.parse(raw)); } catch (e) { reject(new Error('bad json')); }
     });
     req.on('error', reject);
   });
@@ -220,7 +222,7 @@ const routes = {
       const c = db.cosmetics[u];
       if (c && (c.hasCape || c.accessory || c.model || c.hasSkin)) players[u] = c;
     }
-    send(res, 200, { players, kyoto });
+    send(res, 200, { players, kyoto, plus: kyoto.filter(isPlus) });
   },
 };
 
@@ -332,7 +334,7 @@ routes['POST /web/logout'] = async (req, res, body, me) => {
 };
 routes['GET /me'] = async (req, res, body, me) => {
   const u = db.users[me] || {};
-  send(res, 200, { uuid: me, name: u.name, owner: OWNERS.includes(String(u.name || '').toLowerCase()), staff: isStaff(me), profile: db.profiles[me] || {} });
+  send(res, 200, { uuid: me, name: u.name, owner: OWNERS.includes(String(u.name || '').toLowerCase()), staff: isStaff(me), plus: isPlus(me), plusUntil: (db.plus[me] || {}).until || 0, profile: db.profiles[me] || {} });
 };
 
 // ---------------- Kyoto jars for the launcher (put files in ./jars as kyoto-<mc version>.jar) ----------------
@@ -681,6 +683,95 @@ routes['POST /blox/np'] = async (req, res, body) => {
   send(res, 200, { ok: true, needLines: !!e.song && !e.lines.length });
 };
 
+// ---------------- Kyoto+ (optional supporter badge, paid through Ko-fi) ----------------
+// Ko-fi > Settings > API > Webhook URL = https://<your server>/kofi, and copy the Verification Token into the
+// KOFI_TOKEN environment variable on Render. Buyers type their Minecraft name in the Ko-fi message box.
+db.plus = db.plus || {};
+const KOFI_TOKEN = process.env.KOFI_TOKEN || '';
+const KOFI_URL = process.env.KOFI_URL || '';
+function isPlus(u) { const p = db.plus[u]; return !!p && (p.until === 0 || p.until > Date.now()) || isOwnerUuid(u); }
+function grantPlus(u, days, source) {
+  const now = Date.now(); const cur = db.plus[u];
+  const base = cur && cur.until > now ? cur.until : now;
+  db.plus[u] = { since: cur ? cur.since : now, until: days ? base + days * 86400000 : 0, source };
+}
+routes['POST /kofi'] = async (req, res, body) => {
+  let d = {}; try { d = JSON.parse(body.data || '{}'); } catch (e) { return fail(res, 400, 'bad data'); }
+  if (!KOFI_TOKEN || d.verification_token !== KOFI_TOKEN) return fail(res, 403, 'bad token');
+  const text = `${d.message || ''} ${d.from_name || ''}`;
+  let who = null;
+  for (const m of text.matchAll(/[A-Za-z0-9_]{3,16}/g)) { const u = byName(m[0]); if (u) { who = u; break; } }
+  db.kofiLog = (db.kofiLog || []).slice(-200);
+  db.kofiLog.push({ at: Date.now(), name: d.from_name || '', amount: d.amount || '', type: d.type || '', tier: d.tier_name || '', matched: who ? nameOf(who) : '' });
+  if (who) { grantPlus(who, 32, 'kofi'); audit(who, 'kyoto+ (ko-fi)', nameOf(who), `${d.type || ''} ${d.amount || ''}`); }
+  save();
+  send(res, 200, { ok: true, matched: !!who });
+};
+routes['POST /mod/plus'] = async (req, res, body, me) => {
+  if (!staffOnly(res, me)) return; const u = byName(body.name); if (!u) return fail(res, 404, 'Unknown player');
+  const days = Math.max(0, Math.min(3650, Number(body.days) || 0));
+  if (body.remove) { delete db.plus[u]; audit(me, 'remove kyoto+', nameOf(u)); }
+  else { grantPlus(u, days, 'staff'); audit(me, 'give kyoto+', nameOf(u), days ? days + ' days' : 'forever'); }
+  save(); send(res, 200, { ok: true });
+};
+routes['GET /mod/kofi'] = async (req, res, body, me) => { if (!staffOnly(res, me)) return; send(res, 200, { log: (db.kofiLog || []).slice().reverse() }); };
+
+// ---------------- shared client config (so nobody sets things up by hand) ----------------
+// DISCORD_APP_ID on Render = one Discord application for everyone's "Playing Kyoto Client" status.
+routes['GET /config'] = async (req, res) => send(res, 200, { discordAppId: process.env.DISCORD_APP_ID || '', kofiUrl: KOFI_URL, site: process.env.SITE_URL || '' });
+
+// ---------------- TikTok LIVE gifts (unofficial: TikTok has no public LIVE API) ----------------
+// The mod asks the server to watch a username; the server keeps one connection per Kyoto player and the mod
+// polls for new events every second. Needs the "tiktok-live-connector" package (npm install on Render).
+const TT = new Map(); // uuid -> { username, conn, events: [], seq, lastPoll, state }
+let TTLib = null;
+async function ttLib() { if (!TTLib) TTLib = await import('tiktok-live-connector'); return TTLib; }
+function ttPush(t, ev) { ev.seq = ++t.seq; ev.at = Date.now(); t.events.push(ev); if (t.events.length > 200) t.events.shift(); }
+function ttUser(u) { u = u || {}; return { id: u.uniqueId || '', name: cleanStr(u.nickname || u.uniqueId || 'Someone', 40), avatar: (u.profilePicture && (u.profilePicture.url || u.profilePicture.urls || [])[0]) || u.profilePictureUrl || '' }; }
+function ttStop(uuid) { const t = TT.get(uuid); if (!t) return; try { t.conn && t.conn.disconnect(); } catch (e) { /* */ } TT.delete(uuid); }
+setInterval(() => { for (const [u, t] of TT) if (Date.now() - t.lastPoll > 90000) ttStop(u); }, 30000).unref();
+routes['POST /tiktok/connect'] = async (req, res, body, me) => {
+  const username = String(body.username || '').replace(/^@/, '').trim();
+  if (!/^[A-Za-z0-9_.]{2,24}$/.test(username)) return fail(res, 400, 'That isn\'t a TikTok username');
+  if (TT.size >= 60 && !TT.has(me)) return fail(res, 503, 'Too many people connected right now, try again soon');
+  ttStop(me);
+  const t = { username, conn: null, events: [], seq: 0, lastPoll: Date.now(), state: 'connecting' };
+  TT.set(me, t);
+  try {
+    const { TikTokLiveConnection, WebcastEvent, ControlEvent } = await ttLib();
+    const conn = new TikTokLiveConnection(username, { enableExtendedGiftInfo: true, processInitialData: false, signApiKey: process.env.EULER_API_KEY || undefined });
+    t.conn = conn;
+    conn.on(WebcastEvent.GIFT, d => {
+      const g = d.giftDetails || {}; const ex = d.extendedGiftInfo || {};
+      const streaky = (g.giftType === 1);
+      ttPush(t, { type: 'gift', user: ttUser(d.user), gift: cleanStr(g.giftName || ex.name || d.giftName || 'Gift', 40), giftId: d.giftId || 0,
+        count: d.repeatCount || 1, done: !streaky || !!d.repeatEnd, coins: g.diamondCount || ex.diamond_count || d.diamondCount || 0,
+        image: ((ex.image || {}).url_list || [])[0] || '' });
+    });
+    if (WebcastEvent.FOLLOW) conn.on(WebcastEvent.FOLLOW, d => ttPush(t, { type: 'follow', user: ttUser(d.user) }));
+    if (WebcastEvent.SHARE) conn.on(WebcastEvent.SHARE, d => ttPush(t, { type: 'share', user: ttUser(d.user) }));
+    if (WebcastEvent.SUPER_FAN) conn.on(WebcastEvent.SUPER_FAN, d => ttPush(t, { type: 'superfan', user: ttUser(d.user) }));
+    if (WebcastEvent.LIKE) conn.on(WebcastEvent.LIKE, d => { t.likes = (d.totalLikeCount || ((t.likes || 0) + (d.likeCount || 0))); const step = 1000 * Math.floor(t.likes / 1000); if (step > (t.likeStep || 0)) { t.likeStep = step; ttPush(t, { type: 'likes', user: ttUser(d.user), count: step }); } });
+    if (WebcastEvent.STREAM_END) conn.on(WebcastEvent.STREAM_END, () => { t.state = 'ended'; ttPush(t, { type: 'state', state: 'ended' }); });
+    if (ControlEvent && ControlEvent.DISCONNECTED) conn.on(ControlEvent.DISCONNECTED, () => { if (t.state !== 'ended') t.state = 'disconnected'; });
+    await conn.connect();
+    t.state = 'live';
+    send(res, 200, { ok: true, state: 'live' });
+  } catch (e) {
+    ttStop(me);
+    const msg = String(e && e.message || e);
+    send(res, 200, { ok: false, error: /Cannot find (module|package)|ERR_MODULE_NOT_FOUND/.test(msg) ? 'TikTok support isn\'t installed on the server yet' : /offline|not (currently )?live|LIVE has ended|isn't online|UserOfflineError/i.test(msg) ? `@${username} isn't live right now` : 'Couldn\'t connect to TikTok: ' + msg.slice(0, 120) });
+  }
+};
+routes['POST /tiktok/disconnect'] = async (req, res, body, me) => { ttStop(me); send(res, 200, { ok: true }); };
+routes['GET /tiktok/events'] = async (req, res, body, me) => {
+  const t = TT.get(me);
+  if (!t) return send(res, 200, { state: 'off', events: [] });
+  t.lastPoll = Date.now();
+  const since = Number(q(req).get('since')) || 0;
+  send(res, 200, { state: t.state, username: t.username, seq: t.seq, events: t.events.filter(e => e.seq > since) });
+};
+
 // ---------------- staff panel (website: /mod) ----------------
 // Owners (OWNERS env var) are always staff. Owners can add moderators from the panel.
 // Moderators can: approve/reject capes, delete posts + chat, handle reports, mute, ban (not other staff), reset profiles.
@@ -783,7 +874,7 @@ routes['GET /mod/player'] = async (req, res, body, me) => {
   const pr = presence.get(u) || {}; const prof = db.profiles[u] || {};
   send(res, 200, {
     name: nameOf(u), uuid: u, joined: (db.users[u] || {}).joined || 0, online: isOnline(u), lastSeen: pr.lastSeen || 0, server: pr.server || '',
-    owner: isOwnerUuid(u), staff: isStaff(u), banned: isBanned(u), ban: isBanned(u) ? banOf(u) : null, muted: isMuted(u), mutedUntil: H.mutes[u] || 0,
+    owner: isOwnerUuid(u), staff: isStaff(u), plus: isPlus(u), plusUntil: (db.plus[u] || {}).until || 0, banned: isBanned(u), ban: isBanned(u) ? banOf(u) : null, muted: isMuted(u), mutedUntil: H.mutes[u] || 0,
     friends: list(db.friends, u).length, posts: H.posts.filter(p => p.uuid === u).length,
     profile: { displayName: prof.displayName || '', bio: prof.bio || '', location: prof.location || '', links: prof.links || [], views: prof.views || 0,
       media: Object.keys(MEDIA_KINDS).filter(k => prof[k + 'Ext']) },
@@ -797,7 +888,7 @@ routes['GET /mod/players'] = async (req, res, body, me) => {
   const s = String(q(req).get('q') || '').toLowerCase();
   const out = Object.entries(db.users).filter(([u, v]) => !s || v.name.toLowerCase().includes(s))
     .sort((a, b) => (isOnline(b[0]) - isOnline(a[0])) || ((b[1].joined || 0) - (a[1].joined || 0))).slice(0, 40)
-    .map(([u, v]) => ({ name: v.name, online: isOnline(u), banned: isBanned(u), muted: isMuted(u), staff: isStaff(u), owner: isOwnerUuid(u), joined: v.joined || 0 }));
+    .map(([u, v]) => ({ name: v.name, online: isOnline(u), banned: isBanned(u), muted: isMuted(u), staff: isStaff(u), owner: isOwnerUuid(u), plus: isPlus(u), joined: v.joined || 0 }));
   send(res, 200, { players: out });
 };
 routes['GET /mod/chat'] = async (req, res, body, me) => {
@@ -823,6 +914,7 @@ function serveSite(req, res, pathname) {
   // pretty URLs: /edit, /u/<name>, /download, /features -> the single page app
   let rel = decodeURIComponent(pathname);
   if (rel === '/' || /^\/(edit|mod|u\/[A-Za-z0-9_]{1,16}|download|features|profile)\/?$/.test(rel)) rel = '/index.html';
+  if (/^\/overlay\/?$/.test(rel)) rel = '/overlay.html';
   const file = path.normalize(path.join(SITE, rel));
   if (!file.startsWith(SITE) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return false;
   const ext = path.extname(file).toLowerCase();
@@ -891,6 +983,7 @@ const server = http.createServer(async (req, res) => {
       if (!uuid || !p || isBanned(uuid)) return fail(res, 404, 'no profile');
       if (!q(req).get('noview')) { p.views = (p.views || 0) + 1; save(); }
       const badges = ['kyoto'];
+      if (isPlus(uuid)) badges.unshift('plus');
       if (isOwner) badges.unshift('owner');
       return send(res, 200, Object.assign({ name: db.users[uuid].name, badges }, p));
     }
@@ -909,7 +1002,7 @@ const server = http.createServer(async (req, res) => {
     const limit = key === 'PUT /profile/media' ? 22000000 : 2500000;
     const body = (req.method === 'POST' || req.method === 'PUT') ? await readBody(req, limit) : {};
     const open = key === 'GET /' || key === 'GET /stats' || key.startsWith('POST /auth/') || key === 'POST /cosmetics/bulk'
-      || key === 'POST /blox/np' || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version';
+      || key === 'POST /blox/np' || key === 'POST /kofi' || key === 'GET /config' || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version';
     let me = null;
     if (!open) { me = auth(req); if (!me) return fail(res, 401, 'not logged in'); }
     await handler(req, res, body, me);

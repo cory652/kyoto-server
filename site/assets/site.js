@@ -548,7 +548,7 @@ async function playerSearch() {
   try {
     const r = await api('/mod/players?q=' + encodeURIComponent($('#pSearch').value.trim()));
     $('#pList').innerHTML = r.players.length ? r.players.map(p => `<button class="mrow pick ${PSEL === p.name ? 'on' : ''}" data-pl="${esc(p.name)}">${head(p.name)}<b>${esc(p.name)}</b>
-      ${p.online ? '<i class="dot on"></i>' : ''}${p.owner ? '<span class="pill owner">Owner</span>' : p.staff ? '<span class="pill mod">Mod</span>' : ''}${p.banned ? '<span class="pill bad">Banned</span>' : ''}${p.muted ? '<span class="pill">Muted</span>' : ''}</button>`).join('') : empty('search', 'No players found');
+      ${p.online ? '<i class="dot on"></i>' : ''}${p.owner ? '<span class="pill owner">Owner</span>' : p.staff ? '<span class="pill mod">Mod</span>' : ''}${p.plus ? '<span class="pill plus">Kyoto+</span>' : ''}${p.banned ? '<span class="pill bad">Banned</span>' : ''}${p.muted ? '<span class="pill">Muted</span>' : ''}</button>`).join('') : empty('search', 'No players found');
   } catch (e) { toast('Search failed', e.message, 'bad'); }
 }
 async function showPlayer(name) {
@@ -558,12 +558,13 @@ async function showPlayer(name) {
     const pr = p.profile;
     $('#pDetail').innerHTML = `<div class="pd-head"><img src="https://mc-heads.net/body/${encodeURIComponent(p.name)}/90" alt=""><div><h3>${esc(p.name)}</h3>
       <div class="mi-top">${p.online ? '<span class="pill ok">Online' + (p.server ? ' · ' + esc(p.server) : '') + '</span>' : `<span class="pill">Last seen ${ago(p.lastSeen)}</span>`}
-      ${p.owner ? '<span class="pill owner">Owner</span>' : p.staff ? '<span class="pill mod">Mod</span>' : ''}${p.banned ? '<span class="pill bad">Banned</span>' : ''}${p.muted ? `<span class="pill">Muted · ${until(p.mutedUntil)}</span>` : ''}</div>
+      ${p.owner ? '<span class="pill owner">Owner</span>' : p.staff ? '<span class="pill mod">Mod</span>' : ''}${p.plus ? `<span class="pill plus">Kyoto+ · ${p.plusUntil ? until(p.plusUntil) : 'Forever'}</span>` : ''}${p.banned ? '<span class="pill bad">Banned</span>' : ''}${p.muted ? `<span class="pill">Muted · ${until(p.mutedUntil)}</span>` : ''}</div>
       <p class="muted small">Joined ${p.joined ? new Date(p.joined).toLocaleDateString() : 'unknown'} · ${p.friends} friends · ${p.posts} Hub posts · ${p.reports} reports · ${pr.views} profile views</p></div></div>
       ${p.ban ? `<div class="pd-ban">${icon('ban')}<div><b>Banned: ${esc(p.ban.reason || '')}</b><span class="muted small">${until(p.ban.until)}${p.ban.byName ? ' · by ' + esc(p.ban.byName) : ''}</span></div></div>` : ''}
       <div class="pd-acts">${p.owner ? '' : p.banned ? `<button class="btn sm" data-unban="${esc(p.name)}">${icon('check')} Unban</button>` : `<button class="btn sm danger" data-ban="${esc(p.name)}">${icon('ban')} Ban</button>`}
         ${p.owner ? '' : p.muted ? `<button class="btn ghost sm" data-unmute="${esc(p.name)}">${icon('volume')} Unmute</button>` : `<button class="btn ghost sm" data-mute="${esc(p.name)}">${icon('mute')} Mute</button>`}
         ${p.owner ? '' : `<button class="btn ghost sm" data-reset="${esc(p.name)}">${icon('refresh')} Reset profile</button>`}
+        ${p.owner ? '' : p.plus ? `<button class="btn ghost sm" data-unplus="${esc(p.name)}">${icon('star')} Remove Kyoto+</button>` : `<button class="btn ghost sm" data-plus="${esc(p.name)}">${icon('star')} Give Kyoto+</button>`}
         <a class="btn ghost sm" href="/u/${encodeURIComponent(p.name)}" target="_blank">${icon('external')} View profile</a></div>
       <h4>Profile</h4><div class="pd-prof"><p><b>${esc(pr.displayName || p.name)}</b>${pr.location ? ' · ' + esc(pr.location) : ''}</p><p>${esc(pr.bio || 'No bio')}</p>
         ${pr.links.length ? `<p class="muted small">${pr.links.map(esc).join(' · ')}</p>` : ''}${pr.media.length ? `<p class="muted small">Uploaded: ${pr.media.join(', ')}</p>` : ''}</div>
@@ -598,7 +599,7 @@ $('#mOpen').onclick = () => muteDialog($('#bName').value.trim());
 $('#sAdd').onclick = async () => { const n = $('#sName').value.trim(); if (!n) return; if (await modDo('/mod/staff/add', { name: n }, `${n} is now a moderator`)) $('#sName').value = ''; };
 $('#clearReports').onclick = () => modal('Clear all reports?', 'This removes every report without deleting anything.', '', 'Clear', () => modDo('/mod/clearreports', {}, 'Reports cleared'));
 $('#page-mod').addEventListener('click', e => {
-  const b = e.target.closest('[data-del],[data-ban],[data-unban],[data-mute],[data-unmute],[data-ok],[data-dis],[data-pl],[data-reset],[data-unstaff]');
+  const b = e.target.closest('[data-del],[data-ban],[data-unban],[data-mute],[data-unmute],[data-ok],[data-dis],[data-pl],[data-reset],[data-unstaff],[data-plus],[data-unplus]');
   if (!b) return; const d = b.dataset;
   if (d.pl !== undefined) { if (!$('.mpanel .tab[data-mt=players]').classList.contains('on')) modTab('players'); return showPlayer(d.pl); }
   if (d.del) { const [kind, id] = d.del.split(':'); return modDo('/mod/delete', { kind, id }, kind === 'chat' ? 'Message deleted' : 'Post removed'); }
@@ -609,6 +610,8 @@ $('#page-mod').addEventListener('click', e => {
   if (d.ok) return modDo('/mod/approve', { id: Number(d.ok) }, 'Approved, it is live in the Hub');
   if (d.dis) { const [at, by] = d.dis.split('|'); return modDo('/mod/report/dismiss', { at: Number(at), by }, 'Report dismissed'); }
   if (d.reset) return modal(`Reset ${d.reset}'s profile?`, 'Removes their bio, links, name, and uploaded media. This cannot be undone.', '', 'Reset', () => modDo('/mod/profile/reset', { name: d.reset }, 'Profile reset'));
+  if (d.plus) return modal(`Give ${d.plus} Kyoto+?`, 'Cosmetic badge only. Pick how long.', `<select id="plLen" class="input"><option value="31">1 month</option><option value="93">3 months</option><option value="365">1 year</option><option value="0">Forever</option></select>`, 'Give', () => modDo('/mod/plus', { name: d.plus, days: Number($('#plLen').value) }, `${d.plus} has Kyoto+`));
+  if (d.unplus) return modDo('/mod/plus', { name: d.unplus, remove: true }, 'Kyoto+ removed');
   if (d.unstaff) return modal(`Remove ${d.unstaff} from staff?`, 'They lose access to this panel right away.', '', 'Remove', () => modDo('/mod/staff/remove', { name: d.unstaff }, 'Removed from staff'));
 });
 

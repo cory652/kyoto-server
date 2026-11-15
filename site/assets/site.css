@@ -426,3 +426,5 @@ label output { color: var(--mut); font-weight: 500; margin-left: 6px; }
 .mbox { width: min(460px, 100%); padding: 26px; border-radius: 24px; background: #121318; border: 1px solid var(--line); box-shadow: 0 40px 120px rgba(0, 0, 0, .7); animation: rise .35s var(--ease) both; }
 .mbox h3 { margin: 0 0 4px; font: 700 22px var(--pop); } .mbox > p { margin: 0 0 16px; }
 @media (max-width: 960px) { .mdash { grid-template-columns: 1fr; } .mdash .side { position: static; height: auto; } .mstats { grid-template-columns: repeat(2, 1fr); } .msplit { grid-template-columns: 1fr; } .mitem { flex-direction: column; } }
+
+.pill.plus{background:linear-gradient(90deg,#b0379a,#e0507a);color:#ffe9a8;border-color:transparent}

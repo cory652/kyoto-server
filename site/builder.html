@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kyoto Cosmetic Builder</title>
+<meta name="description" content="Build your own Minecraft cosmetics for Kyoto Client: voxel hats, wings, pictures and capes.">
+<link rel="icon" href="/img/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/builder.css?v=1">
+</head>
+<body>
+<div id="app">
+  <!-- top bar -->
+  <header class="top">
+    <a class="logo" href="/"><img src="/img/logos/logo_k_starry.png" alt=""><b>Kyoto</b><span>Cosmetic Builder</span></a>
+    <div class="menus">
+      <button data-act="new">New</button>
+      <label class="filebtn">Open<input type="file" id="openFile" accept=".kycos,application/json" hidden></label>
+      <button data-act="export">Export .kycos</button>
+      <button data-act="help">Help</button>
+    </div>
+    <input id="cosName" class="namebox" value="My Cosmetic" maxlength="32" spellcheck="false" title="Name">
+    <div class="topright">
+      <span id="who" class="who"></span>
+      <button class="pri ghost" data-act="wear">Wear now</button>
+      <button class="pri" data-act="post">Post to Hub</button>
+    </div>
+  </header>
+
+  <!-- tools -->
+  <nav class="tools" id="tools">
+    <button class="on" data-tool="place" title="Place (P)"><svg viewBox="0 0 24 24"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M12 9v6M9 12h6"/></svg><kbd>P</kbd></button>
+    <button data-tool="erase" title="Erase (E)"><svg viewBox="0 0 24 24"><path d="m5 15 8-8 6 6-6 6H9z"/><path d="m9 19-4-4M13 19h7"/></svg><kbd>E</kbd></button>
+    <button data-tool="paint" title="Paint (B)"><svg viewBox="0 0 24 24"><path d="M18.5 4.5a2 2 0 0 1 0 3L10 16l-3-3 8.5-8.5a2 2 0 0 1 3 0z"/><path d="M7 13c-2 0-3 1.5-3 3.5S3 20 3 20s4 .5 5.5-1 1.5-3 1.5-3"/></svg><kbd>B</kbd></button>
+    <button data-tool="pick" title="Pick colour (I)"><svg viewBox="0 0 24 24"><path d="m14 6 4 4M5 19l1-4 8.5-8.5a2.8 2.8 0 0 1 4 4L10 19z"/></svg><kbd>I</kbd></button>
+    <button data-tool="fill" title="Fill a layer (F)"><svg viewBox="0 0 24 24"><path d="m6 12 6-6 7 7-6 6z"/><path d="M19 15c1 1.3 1.5 2.2 1.5 3a1.5 1.5 0 0 1-3 0c0-.8.5-1.7 1.5-3z"/></svg><kbd>F</kbd></button>
+    <div class="sep"></div>
+    <button data-toggle="symX" title="Symmetry: mirror left/right while building (M)"><svg viewBox="0 0 24 24"><path d="M12 3v18M8 7 4 12l4 5M16 7l4 5-4 5"/></svg><kbd>M</kbd></button>
+    <button data-act="undo" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+    <button data-act="redo" title="Redo (Ctrl+Y)"><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+    <button data-act="clear" title="Clear all voxels"><svg viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5h9l1-12.5"/></svg></button>
+  </nav>
+
+  <!-- viewport -->
+  <main class="view">
+    <canvas id="gl"></canvas>
+    <div class="vhud tl"><b id="slotLabel">Head</b><span id="kindLabel">Voxel</span></div>
+    <div class="vhud tr">
+      <button data-cam="front">Front</button><button data-cam="side">Side</button><button data-cam="back">Back</button><button data-cam="top">Top</button><button data-cam="reset" title="Frame (Numpad .)">Frame</button>
+    </div>
+    <div class="vhud bl" id="hint">Left click: place · Right drag: orbit · Shift + right drag: pan · Wheel: zoom</div>
+    <div class="vhud br"><label class="chk"><input type="checkbox" id="animate"><span></span>Walk</label><label class="chk"><input type="checkbox" id="showGrid" checked><span></span>Grid</label></div>
+    <div id="dropHint" hidden>Drop a skin, picture, cape or .kycos file</div>
+  </main>
+
+  <!-- properties -->
+  <aside class="props">
+    <div class="ptabs" id="ptabs"><button class="on" data-pt="cosmetic">Cosmetic</button><button data-pt="colors">Colours</button><button data-pt="character">Character</button><button data-pt="cape">Cape</button></div>
+    <div class="pbody" id="pbody">
+
+      <section data-pane="cosmetic">
+        <h4>Type</h4>
+        <div class="seg" id="kindSeg"><button data-kind="voxel" class="on">Voxel</button><button data-kind="texture">Picture</button></div>
+        <h4>Where it goes</h4>
+        <div class="slots" id="slotSeg">
+          <button data-slot="head" class="on"><svg viewBox="0 0 24 24"><rect x="7" y="4" width="10" height="10" rx="1.5"/><path d="M9 18h6v3H9z"/></svg>Head</button>
+          <button data-slot="back"><svg viewBox="0 0 24 24"><path d="M8 4h8v16H8z"/><path d="M8 7 3 12l5 3M16 7l5 5-5 3"/></svg>Back</button>
+          <button data-slot="arm"><svg viewBox="0 0 24 24"><path d="M9 3h6v18H9z"/><path d="M9 14h6"/></svg>Arm</button>
+          <button data-slot="leg"><svg viewBox="0 0 24 24"><path d="M8 3h8v6l-1 12h-3l-0-9-0 9H9L8 9z"/></svg>Leg</button>
+        </div>
+        <label class="row" id="mirrorRow"><span>Both sides</span><input type="checkbox" id="mirror"><i class="sw"></i></label>
+
+        <div id="voxelProps">
+          <h4>Build space</h4>
+          <div class="trio"><label>W<input type="number" id="gW" min="1" max="48"></label><label>H<input type="number" id="gH" min="1" max="48"></label><label>D<input type="number" id="gD" min="1" max="48"></label></div>
+          <h4>Voxel size</h4>
+          <div class="seg" id="vsSeg"><button data-vs="0.5">½ px</button><button data-vs="1" class="on">1 px</button><button data-vs="2">2 px</button></div>
+          <h4>Move build space <small>(px)</small></h4>
+          <div class="trio"><label>X<input type="number" id="cX" step="0.5"></label><label>Y<input type="number" id="cY" step="0.5"></label><label>Z<input type="number" id="cZ" step="0.5"></label></div>
+          <p class="note">One voxel at 1 px is the size of one skin pixel. The body counts as solid, so start by clicking on it.</p>
+        </div>
+
+        <div id="pictureProps" hidden>
+          <h4>Picture</h4>
+          <label class="dropbtn"><input type="file" id="picFile" accept="image/png,image/jpeg,image/webp,image/gif" hidden><span id="picName">Choose a PNG…</span></label>
+          <h4>Size <small>(px)</small></h4>
+          <div class="duo"><label>W<input type="number" id="pW" step="0.5" min="0.5" max="64"></label><label>H<input type="number" id="pH" step="0.5" min="0.5" max="64"></label></div>
+          <h4>Position <small>(px from the slot)</small></h4>
+          <div class="trio"><label>X<input type="number" id="pX" step="0.5"></label><label>Y<input type="number" id="pY" step="0.5"></label><label>Z<input type="number" id="pZ" step="0.5"></label></div>
+          <h4>Rotation <small>(°)</small></h4>
+          <div class="trio"><label>X<input type="number" id="rX" step="5"></label><label>Y<input type="number" id="rY" step="5"></label><label>Z<input type="number" id="rZ" step="5"></label></div>
+          <p class="note">Great for wings, signs, halos and badges. Transparent PNGs work best.</p>
+        </div>
+
+        <h4>Stats</h4>
+        <div class="stats"><span><b id="stVox">0</b> voxels</span><span><b id="stSize">0 KB</b></span></div>
+      </section>
+
+      <section data-pane="colors" hidden>
+        <h4>Current colour</h4>
+        <div class="curcol"><input type="color" id="colorIn" value="#ff8fc8"><code id="colorHex">#ff8fc8</code><button class="mini" id="addSwatch" title="Add to palette">+</button></div>
+        <h4>Palette</h4>
+        <div class="palette" id="palette"></div>
+        <h4>Shades of current</h4>
+        <div class="palette shades" id="shades"></div>
+        <p class="note">Right click a swatch to remove it. Pick (I) grabs a colour from a voxel.</p>
+      </section>
+
+      <section data-pane="character" hidden>
+        <h4>Skin</h4>
+        <div class="skinrow"><canvas id="skinPrev" width="64" height="64"></canvas>
+          <div class="skinbtns"><label class="dropbtn sm"><input type="file" id="skinFile" accept="image/png" hidden><span>Import skin…</span></label>
+          <div class="namefetch"><input id="skinName" placeholder="Minecraft name" maxlength="16"><button class="mini" id="skinGo">Get</button></div></div></div>
+        <h4>Arms</h4>
+        <div class="seg" id="armSeg"><button data-arms="wide" class="on">Wide (Steve)</button><button data-arms="slim">Slim (Alex)</button></div>
+        <h4>Skin layers</h4>
+        <label class="row"><span>Hat</span><input type="checkbox" data-layer="hat" checked><i class="sw"></i></label>
+        <label class="row"><span>Jacket</span><input type="checkbox" data-layer="jacket" checked><i class="sw"></i></label>
+        <label class="row"><span>Sleeves</span><input type="checkbox" data-layer="sleeves" checked><i class="sw"></i></label>
+        <label class="row"><span>Pants</span><input type="checkbox" data-layer="pants" checked><i class="sw"></i></label>
+        <h4>Show body parts</h4>
+        <div class="partgrid">
+          <label class="pchk"><input type="checkbox" data-part="head" checked><span>Head</span></label><label class="pchk"><input type="checkbox" data-part="body" checked><span>Body</span></label>
+          <label class="pchk"><input type="checkbox" data-part="arms" checked><span>Arms</span></label><label class="pchk"><input type="checkbox" data-part="legs" checked><span>Legs</span></label>
+        </div>
+      </section>
+
+      <section data-pane="cape" hidden>
+        <h4>Cape template</h4>
+        <p class="note">Drop in any PNG or GIF. It's fitted onto the cape (front and back), and GIFs become animated capes.</p>
+        <label class="dropbtn"><input type="file" id="capeFile" accept="image/png,image/gif,image/jpeg,image/webp" hidden><span id="capeName">Choose a PNG or GIF…</span></label>
+        <h4>Fit</h4>
+        <div class="seg" id="fitSeg"><button data-fit="cover" class="on">Fill</button><button data-fit="contain">Fit</button><button data-fit="stretch">Stretch</button></div>
+        <h4>Inside of the cape</h4>
+        <div class="seg" id="insideSeg"><button data-inside="dark" class="on">Dark</button><button data-inside="same">Same picture</button><button data-inside="edge">Edge colour</button></div>
+        <h4>Template</h4>
+        <canvas id="capeTex" width="64" height="32"></canvas>
+        <div class="capebtns"><button class="pri ghost" id="capeDl" disabled>Download cape</button><button class="pri ghost" id="capeUse" disabled>Use as my cape</button><button class="pri" id="capePost" disabled>Post cape to Hub</button></div>
+        <p class="note">Downloaded capes go in your <code>kyoto/capes</code> folder.</p>
+      </section>
+    </div>
+  </aside>
+
+  <footer class="status"><span id="stHover">—</span><span id="stTool">Place</span><span class="grow"></span><span id="stSaved">Autosaved in this browser</span></footer>
+</div>
+
+<div id="modal" hidden><div class="mcard"><button class="mx" data-close>✕</button><div id="mbody"></div></div></div>
+<div id="toasts"></div>
+<script src="/assets/builder.js?v=1"></script>
+</body>
+</html>

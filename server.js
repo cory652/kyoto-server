@@ -222,7 +222,9 @@ const routes = {
       const c = db.cosmetics[u];
       if (c && (c.hasCape || c.accessory || c.model || c.hasSkin)) players[u] = c;
     }
-    send(res, 200, { players, kyoto, plus: kyoto.filter(isPlus) });
+    const kycos = {};
+    for (const u of kyoto) if (db.kycos && db.kycos[u] && Object.keys(db.kycos[u].slots || {}).length) kycos[u] = db.kycos[u].version;
+    send(res, 200, { players, kyoto, plus: kyoto.filter(isPlus), kycos });
   },
 };
 
@@ -420,7 +422,7 @@ function checkText(res, me, text) {
   if (blocked(text)) { fail(res, 400, 'Blocked by the filter (bad words or unsafe content)'); return false; }
   return true;
 }
-const pub = (p, me) => ({ id: p.id, type: p.type, uuid: p.uuid, name: nameOf(p.uuid), title: p.title, text: p.text, at: p.at,
+const pub = (p, me) => ({ id: p.id, type: p.type, slot: p.slot, uuid: p.uuid, name: nameOf(p.uuid), title: p.title, text: p.text, at: p.at,
   likes: p.likes.length, liked: p.likes.includes(me), hasImage: !!p.image, pending: !!p.pending, owner: isOwnerUuid(p.uuid) });
 const q = req => new URL(req.url, 'http://x').searchParams;
 
@@ -432,7 +434,7 @@ routes['GET /hub/posts'] = async (req, res, body, me) => {
   send(res, 200, { posts: list.sort(sort).slice(0, 60).map(p => pub(p, me)), mod });
 };
 routes['POST /hub/post'] = async (req, res, body, me) => {
-  const type = ['post', 'preset', 'cape'].includes(body.type) ? body.type : 'post';
+  const type = ['post', 'preset', 'cape', 'kycos'].includes(body.type) ? body.type : 'post';
   const title = clean(body.title, 40), text = clean(body.text, 300);
   if (!checkText(res, me, title + ' ' + text)) return;
   if (slowmode(me + 'post', 30000)) return fail(res, 429, 'Wait 30 seconds between posts');
@@ -441,6 +443,13 @@ routes['POST /hub/post'] = async (req, res, body, me) => {
   if (type === 'preset') {
     try { const d = JSON.parse(String(body.data || '')); if (String(body.data).length > 40000) throw 0; post.data = JSON.stringify({ modules: d.modules || {}, choices: d.choices || {}, crosshair: d.crosshair || null, vfx: d.vfx || null }); }
     catch (e) { return fail(res, 400, 'Bad preset'); }
+  }
+  if (type === 'kycos') {
+    const k = checkKycos(body.data);
+    if (k.error) return fail(res, 400, k.error);
+    post.data = k.json;
+    post.slot = k.slot;
+    post.pending = REQUIRE_APPROVAL && !isStaff(me);
   }
   if (type === 'cape') {
     const buf = Buffer.from(String(body.image || ''), 'base64');
@@ -851,6 +860,85 @@ routes['GET /link/discord/callback'] = async (req, res) => {
   } catch (e) { send(res, 500, donePage(false, 'Couldn\'t connect Discord'), 'text/html'); }
 };
 
+// ---------------- .kycos custom cosmetics (made in the Cosmetic Builder) ----------------
+// One cosmetic per slot (head, back, arm, leg). Everyone with Kyoto downloads the ones you wear.
+db.kycos = db.kycos || {};
+const KYCOS_SLOTS = ['head', 'back', 'arm', 'leg'];
+function checkKycos(raw) {
+  const str = typeof raw === 'string' ? raw : JSON.stringify(raw || {});
+  if (str.length > 450000) return { error: 'That cosmetic is too big (max 450 KB)' };
+  let d; try { d = JSON.parse(str); } catch (e) { return { error: 'Not a .kycos file' }; }
+  if (d.format !== 'kycos') return { error: 'Not a .kycos file' };
+  if (!KYCOS_SLOTS.includes(d.slot)) return { error: 'Capes are uploaded as capes. Pick head, back, arm or leg.' };
+  if (blocked(String(d.name || ''))) return { error: 'That name isn\'t allowed' };
+  const out = { format: 'kycos', version: 1, name: cleanStr(d.name || 'Cosmetic', 32), author: cleanStr(d.author || '', 16), slot: d.slot, kind: d.kind === 'texture' ? 'texture' : 'voxel', mirror: !!d.mirror };
+  const nums = (a, n, lo, hi) => Array.isArray(a) && a.length === n && a.every(v => Number.isFinite(v) && v >= lo && v <= hi);
+  if (out.kind === 'voxel') {
+    const g = d.grid || {};
+    if (!nums(g.n, 3, 1, 48) || !Number.isFinite(g.vs) || g.vs < 0.25 || g.vs > 4 || !nums(g.center, 3, -64, 64)) return { error: 'Bad voxel grid' };
+    const pal = (Array.isArray(d.palette) ? d.palette : []).slice(0, 256).map(c => hex(c, '#ffffff'));
+    const vox = Array.isArray(d.voxels) ? d.voxels : [];
+    if (!pal.length || !vox.length || vox.length > 12000) return { error: 'A cosmetic needs 1 to 12000 voxels' };
+    for (const v of vox) if (!Array.isArray(v) || v.length !== 4 || v[0] < 0 || v[1] < 0 || v[2] < 0 || v[0] >= g.n[0] || v[1] >= g.n[1] || v[2] >= g.n[2] || !(v[3] >= 0 && v[3] < pal.length)) return { error: 'Bad voxel' };
+    out.grid = { n: g.n.map(Math.round), vs: g.vs, center: g.center }; out.palette = pal; out.voxels = vox.map(v => v.map(Math.round));
+  } else {
+    const t = d.texture || {};
+    const png = Buffer.from(String(t.png || ''), 'base64');
+    if (!png.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) || png.length > 300000) return { error: 'The picture must be a PNG under 300 KB' };
+    if (!nums(t.size, 2, 0.5, 64) || !nums(t.offset, 3, -64, 64) || !nums(t.rot, 3, -360, 360)) return { error: 'Bad picture placement' };
+    out.texture = { png: png.toString('base64'), size: t.size, offset: t.offset, rot: t.rot };
+  }
+  return { json: JSON.stringify(out), slot: out.slot };
+}
+routes['GET /kycos'] = async (req, res) => {
+  const u = String(q(req).get('uuid') || ''); const k = db.kycos[u];
+  if (!k || isBanned(u)) return send(res, 200, { slots: {}, version: 0 });
+  send(res, 200, { slots: k.slots, version: k.version });
+};
+routes['PUT /kycos'] = async (req, res, body, me) => {
+  if (isBanned(me)) return fail(res, 403, 'Banned');
+  const k = db.kycos[me] || (db.kycos[me] = { slots: {}, version: 0 });
+  if (body.remove) { if (KYCOS_SLOTS.includes(body.slot)) delete k.slots[body.slot]; else k.slots = {}; }
+  else {
+    const c = checkKycos(body.data);
+    if (c.error) return fail(res, 400, c.error);
+    k.slots[c.slot] = JSON.parse(c.json);
+  }
+  k.version = Date.now(); save();
+  send(res, 200, { ok: true, slots: Object.keys(k.slots) });
+};
+routes['POST /kycos/equip'] = async (req, res, body, me) => {
+  const p = H.posts.find(x => x.id === Number(body.id) && x.type === 'kycos' && !x.pending);
+  if (!p) return fail(res, 404, 'That cosmetic is gone');
+  const k = db.kycos[me] || (db.kycos[me] = { slots: {}, version: 0 });
+  const d = JSON.parse(p.data); k.slots[d.slot] = d; k.version = Date.now(); save();
+  send(res, 200, { ok: true, slot: d.slot });
+};
+routes['GET /hub/kycos'] = async (req, res, body, me) => {
+  const p = H.posts.find(x => x.id === Number(q(req).get('id')) && x.type === 'kycos');
+  if (!p || (p.pending && !isStaff(me) && p.uuid !== me)) return fail(res, 404, 'gone');
+  send(res, 200, { data: p.data });
+};
+// Skins for the builder (Mojang doesn't allow browsers to load them directly).
+const skinCache = new Map();
+routes['GET /mcskin'] = async (req, res) => {
+  const name = String(q(req).get('name') || '');
+  if (!/^[A-Za-z0-9_]{2,16}$/.test(name)) return fail(res, 400, 'Bad name');
+  const hit = skinCache.get(name.toLowerCase());
+  if (hit && Date.now() - hit.at < 10 * 60000) { res.setHeader('X-Skin-Slim', hit.slim ? '1' : '0'); return send(res, 200, hit.buf, 'image/png'); }
+  try {
+    const pr = await fetch('https://api.mojang.com/users/profiles/minecraft/' + name); if (!pr.ok) return fail(res, 404, 'No player with that name');
+    const { id } = await pr.json();
+    const sr = await fetch('https://sessionserver.mojang.com/session/minecraft/profile/' + id); const sp = await sr.json();
+    const tex = JSON.parse(Buffer.from(sp.properties.find(x => x.name === 'textures').value, 'base64').toString()).textures.SKIN;
+    const ir = await fetch(tex.url.replace('http://', 'https://')); const buf = Buffer.from(await ir.arrayBuffer());
+    const slim = !!(tex.metadata && tex.metadata.model === 'slim');
+    skinCache.set(name.toLowerCase(), { at: Date.now(), buf, slim }); if (skinCache.size > 300) skinCache.delete(skinCache.keys().next().value);
+    res.setHeader('X-Skin-Slim', slim ? '1' : '0');
+    send(res, 200, buf, 'image/png');
+  } catch (e) { fail(res, 502, 'Couldn\'t get that skin'); }
+};
+
 // ---------------- staff panel (website: /mod) ----------------
 // Owners (OWNERS env var) are always staff. Owners can add moderators from the panel.
 // Moderators can: approve/reject capes, delete posts + chat, handle reports, mute, ban (not other staff), reset profiles.
@@ -994,6 +1082,7 @@ function serveSite(req, res, pathname) {
   let rel = decodeURIComponent(pathname);
   if (rel === '/' || /^\/(edit|mod|u\/[A-Za-z0-9_]{1,16}|download|features|profile)\/?$/.test(rel)) rel = '/index.html';
   if (/^\/overlay\/?$/.test(rel)) rel = '/overlay.html';
+  if (/^\/builder\/?$/.test(rel)) rel = '/builder.html';
   const file = path.normalize(path.join(SITE, rel));
   if (!file.startsWith(SITE) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return false;
   const ext = path.extname(file).toLowerCase();
@@ -1017,6 +1106,7 @@ const server = http.createServer(async (req, res) => {
     if (limited(req.url.startsWith('/blox/np') ? 'blox:' + ip : ip) && !(req.url.startsWith('/blox/np') && (hits.get('blox:' + ip) || {}).n <= 1500)) return fail(res, 429, 'slow down');
     // the website may be hosted somewhere else (Netlify, GitHub Pages...) - let it call the API
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Skin-Slim');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Key');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
     if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
@@ -1084,7 +1174,7 @@ const server = http.createServer(async (req, res) => {
     const limit = key === 'PUT /profile/media' ? 22000000 : 2500000;
     const body = (req.method === 'POST' || req.method === 'PUT') ? await readBody(req, limit) : {};
     const open = key === 'GET /' || key === 'GET /stats' || key.startsWith('POST /auth/') || key === 'POST /cosmetics/bulk'
-      || key === 'POST /blox/np' || key === 'POST /kofi' || key === 'GET /config' || key.startsWith('GET /cf/') || key === 'GET /link/discord/callback' || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version';
+      || key === 'POST /blox/np' || key === 'POST /kofi' || key === 'GET /config' || key === 'GET /kycos' || key === 'GET /mcskin' || key.startsWith('GET /cf/') || key === 'GET /link/discord/callback' || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version';
     let me = null;
     if (!open) { me = auth(req); if (!me) return fail(res, 401, 'not logged in'); }
     await handler(req, res, body, me);

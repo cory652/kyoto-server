@@ -968,31 +968,64 @@ routes['POST /tiktok/connect'] = async (req, res, body, me) => {
   ttStop(me);
   const t = { username, conn: null, events: [], seq: 0, lastPoll: Date.now(), state: 'connecting' };
   TT.set(me, t);
-  try {
-    const { TikTokLiveConnection, WebcastEvent, ControlEvent } = await ttLib();
-    const conn = new TikTokLiveConnection(username, { enableExtendedGiftInfo: true, processInitialData: false, signApiKey: process.env.EULER_API_KEY || undefined });
-    t.conn = conn;
-    conn.on(WebcastEvent.GIFT, d => {
-      const g = d.giftDetails || {}; const ex = d.extendedGiftInfo || {};
-      const streaky = (g.giftType === 1);
-      ttPush(t, { type: 'gift', user: ttUser(d.user), gift: cleanStr(g.giftName || ex.name || d.giftName || 'Gift', 40), giftId: d.giftId || 0,
-        count: d.repeatCount || 1, done: !streaky || !!d.repeatEnd, coins: g.diamondCount || ex.diamond_count || d.diamondCount || 0,
-        image: ((ex.image || {}).url_list || [])[0] || '' });
-    });
-    if (WebcastEvent.FOLLOW) conn.on(WebcastEvent.FOLLOW, d => ttPush(t, { type: 'follow', user: ttUser(d.user) }));
-    if (WebcastEvent.SHARE) conn.on(WebcastEvent.SHARE, d => ttPush(t, { type: 'share', user: ttUser(d.user) }));
-    if (WebcastEvent.SUPER_FAN) conn.on(WebcastEvent.SUPER_FAN, d => ttPush(t, { type: 'superfan', user: ttUser(d.user) }));
-    if (WebcastEvent.LIKE) conn.on(WebcastEvent.LIKE, d => { t.likes = (d.totalLikeCount || ((t.likes || 0) + (d.likeCount || 0))); const step = 1000 * Math.floor(t.likes / 1000); if (step > (t.likeStep || 0)) { t.likeStep = step; ttPush(t, { type: 'likes', user: ttUser(d.user), count: step }); } });
-    if (WebcastEvent.STREAM_END) conn.on(WebcastEvent.STREAM_END, () => { t.state = 'ended'; ttPush(t, { type: 'state', state: 'ended' }); });
-    if (ControlEvent && ControlEvent.DISCONNECTED) conn.on(ControlEvent.DISCONNECTED, () => { if (t.state !== 'ended') t.state = 'disconnected'; });
-    await conn.connect();
-    t.state = 'live';
-    send(res, 200, { ok: true, state: 'live' });
-  } catch (e) {
-    ttStop(me);
-    const msg = String(e && e.message || e);
-    send(res, 200, { ok: false, error: /Cannot find (module|package)|ERR_MODULE_NOT_FOUND/.test(msg) ? 'TikTok support isn\'t installed on the server yet' : /offline|not (currently )?live|LIVE has ended|isn't online|UserOfflineError/i.test(msg) ? `@${username} isn't live right now` : 'Couldn\'t connect to TikTok: ' + msg.slice(0, 120) });
+  // TikTok often gives cloud servers (like Render) an empty page, so try a few ways in a row:
+  //  1. normal connect   2. look the LIVE up first, then connect straight to that room   3. same again after a short wait
+  const attempts = [
+    { label: 'normal', opts: {} },
+    { label: 'room id', opts: { fetchRoomInfoOnConnect: false }, room: true },
+    { label: 'room id, retry', opts: { fetchRoomInfoOnConnect: false }, room: true, wait: 1500 }
+  ];
+  let lastErr = null; const started = Date.now();
+  // the mod waits 15 s for an answer, so all tries together must finish in about 13 s
+  const left = () => 13000 - (Date.now() - started);
+  const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('TikTok took too long to answer')), Math.max(500, ms)))]);
+  for (const a of attempts) {
+    if (left() < 2500) break;
+    if (TT.get(me) !== t) return send(res, 200, { ok: false, error: 'Cancelled' }); // they pressed Connect again
+    if (a.wait) await new Promise(r => setTimeout(r, a.wait));
+    try {
+      const { TikTokLiveConnection, WebcastEvent, ControlEvent } = await ttLib();
+      const conn = new TikTokLiveConnection(username, Object.assign({ enableExtendedGiftInfo: true, processInitialData: false, signApiKey: process.env.EULER_API_KEY || undefined }, a.opts));
+      t.conn = conn;
+      conn.on(WebcastEvent.GIFT, d => {
+        const g = d.giftDetails || {}; const ex = d.extendedGiftInfo || {};
+        const streaky = (g.giftType === 1);
+        ttPush(t, { type: 'gift', user: ttUser(d.user), gift: cleanStr(g.giftName || ex.name || d.giftName || 'Gift', 40), giftId: d.giftId || 0,
+          count: d.repeatCount || 1, done: !streaky || !!d.repeatEnd, coins: g.diamondCount || ex.diamond_count || d.diamondCount || 0,
+          image: ((ex.image || {}).url_list || [])[0] || '' });
+      });
+      if (WebcastEvent.FOLLOW) conn.on(WebcastEvent.FOLLOW, d => ttPush(t, { type: 'follow', user: ttUser(d.user) }));
+      if (WebcastEvent.SHARE) conn.on(WebcastEvent.SHARE, d => ttPush(t, { type: 'share', user: ttUser(d.user) }));
+      if (WebcastEvent.SUPER_FAN) conn.on(WebcastEvent.SUPER_FAN, d => ttPush(t, { type: 'superfan', user: ttUser(d.user) }));
+      if (WebcastEvent.LIKE) conn.on(WebcastEvent.LIKE, d => { t.likes = (d.totalLikeCount || ((t.likes || 0) + (d.likeCount || 0))); const step = 1000 * Math.floor(t.likes / 1000); if (step > (t.likeStep || 0)) { t.likeStep = step; ttPush(t, { type: 'likes', user: ttUser(d.user), count: step }); } });
+      if (WebcastEvent.STREAM_END) conn.on(WebcastEvent.STREAM_END, () => { t.state = 'ended'; ttPush(t, { type: 'state', state: 'ended' }); });
+      if (ControlEvent && ControlEvent.DISCONNECTED) conn.on(ControlEvent.DISCONNECTED, () => { if (t.state !== 'ended') t.state = 'disconnected'; });
+      if (ControlEvent && ControlEvent.ERROR) conn.on(ControlEvent.ERROR, e => console.warn('[tiktok]', username, 'error event:', e && (e.info || e.message || e)));
+      if (a.room) {
+        const roomId = await within(conn.fetchRoomId(username), left() - 1000);
+        if (!roomId) throw new Error('Could not find the LIVE room');
+        await within(conn.connect(String(roomId)), left());
+      } else await within(conn.connect(), Math.min(left(), 7000));
+      t.state = 'live';
+      console.log('[tiktok]', username, 'connected (' + a.label + ')');
+      return send(res, 200, { ok: true, state: 'live' });
+    } catch (e) {
+      lastErr = e;
+      try { t.conn && t.conn.disconnect(); } catch (x) { /* */ }
+      const m = String(e && e.message || e);
+      console.warn('[tiktok]', username, 'attempt "' + a.label + '" failed:', m, e && e.stack ? '\n' + String(e.stack).split('\n').slice(0, 4).join('\n') : '');
+      if (/Cannot find (module|package)|ERR_MODULE_NOT_FOUND|UserOfflineError|not (currently )?live|LIVE has ended|isn't online/i.test(m)) break; // retrying won't help
+    }
   }
+  ttStop(me);
+  const msg = String(lastErr && lastErr.message || lastErr);
+  const keyHint = process.env.EULER_API_KEY ? '' : ' (server owner: add a free EULER_API_KEY on Render)';
+  send(res, 200, { ok: false, error: /Cannot find (module|package)|ERR_MODULE_NOT_FOUND/.test(msg) ? 'TikTok support isn\'t installed on the server yet'
+    : /UserOfflineError|offline|not (currently )?live|LIVE has ended|isn't online/i.test(msg) ? `@${username} isn't live right now`
+    : /too long/i.test(msg) ? 'TikTok took too long to answer, press Connect again' + keyHint
+    : /rate.?limit|429|too many/i.test(msg) ? 'TikTok is busy (rate limited), try again in a minute' + keyHint
+    : /empty|captcha|blocked|403|sign/i.test(msg) ? 'TikTok blocked the Kyoto server' + keyHint
+    : 'Couldn\'t connect to TikTok: ' + msg.slice(0, 120) });
 };
 routes['POST /tiktok/disconnect'] = async (req, res, body, me) => { ttStop(me); send(res, 200, { ok: true }); };
 routes['GET /tiktok/events'] = async (req, res, body, me) => {

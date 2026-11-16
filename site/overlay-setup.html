@@ -118,9 +118,21 @@ function build() {
 let t;
 function update() {
   $('#optScene').hidden = S.mode !== 'scene'; $('#optPos').hidden = S.mode === 'scene' || S.mode === 'bar'; $('#optPop').hidden = S.mode !== 'pop';
-  const u = build(); $('#url').value = u;
+  const u = build(); $('#url').value = 'Making your link…';
+  shortLink(u);
   // preview: pop-ups show right away and stay up
   clearTimeout(t); t = setTimeout(() => { $('#pv').src = u.replace('/overlay?', '/overlay?') + (S.mode === 'pop' ? '&every=0' : ''); }, 250);
+}
+let shortT, shortN = 0;
+function shortLink(long) {
+  clearTimeout(shortT); const n = ++shortN;
+  shortT = setTimeout(async () => {
+    try {
+      const r = await fetch('/overlay/link', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q: long.split('?')[1] || '' }) });
+      const j = await r.json(); if (n !== shortN) return;
+      $('#url').value = j.code ? `${location.origin}/o/${j.code}` : long;
+    } catch (e) { if (n === shortN) $('#url').value = long; }
+  }, 300);
 }
 function fit() {
   const v = S.orient === 'v', st = $('#stage'); st.classList.toggle('v', v); st.classList.toggle('guides', v && $('#guides').checked); $('#guideRow').hidden = !v;

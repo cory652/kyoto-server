@@ -192,7 +192,7 @@
 <script src="/assets/qr.js"></script>
 <script>
 'use strict';
-const Q = new URLSearchParams(location.search);
+const Q = new URLSearchParams(window.KY_Q !== undefined ? window.KY_Q : location.search);
 const MODE = (Q.get('mode') || 'pop').toLowerCase();
 const VERT = Q.get('layout') === 'vertical' || (Q.get('layout') !== 'horizontal' && innerHeight > innerWidth * 1.2);
 const POS = ['br', 'bl', 'tr', 'tl', 'bottom', 'top', 'mid'].includes(Q.get('pos')) ? (Q.get('pos') === 'mid' && !VERT ? 'bottom' : Q.get('pos')) : VERT ? 'top' : 'br';

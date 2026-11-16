@@ -116,6 +116,14 @@ function auth(req) {
 // ---------------- routes ----------------
 const routes = {
   'GET /': async (req, res) => send(res, 200, { name: 'Kyoto Client server', online: onlineCount() }),
+  'POST /overlay/link': async (req, res, body) => {
+    const qs = String(body.q || '').replace(/^\?/, '').slice(0, 600);
+    if (!/^[\w\-.~%=&,+]*$/.test(qs)) return fail(res, 400, 'Bad settings');
+    const code = require('crypto').createHash('sha1').update(qs).digest('hex').slice(0, 7);
+    db.overlays = db.overlays || {};
+    if (!(code in db.overlays)) { if (Object.keys(db.overlays).length > 50000) return fail(res, 503, 'Try again later'); db.overlays[code] = qs; save(); }
+    send(res, 200, { code });
+  },
   'GET /stats': async (req, res) => send(res, 200, { online: onlineCount(), users: Object.keys(db.users).length }),
 
   // Login: the client tells Mojang "I'm joining <serverId>", we ask Mojang if that's true.
@@ -1576,6 +1584,14 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
     if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
     const url = new URL(req.url, 'http://x');
+    // short overlay links (/o/abc1234) for apps that don't accept long links, like TikTok LIVE Studio
+    const ov = req.method === 'GET' && /^\/o\/([a-z0-9]{4,12})\/?$/.exec(url.pathname);
+    if (ov) {
+      const qs = (db.overlays || {})[ov[1]];
+      let html = fs.readFileSync(path.join(SITE, 'overlay.html'), 'utf8');
+      if (qs !== undefined) html = html.replace('<div id="root"></div>', `<div id="root"></div><script>window.KY_Q = ${JSON.stringify(qs).replace(/</g, '\\u003c')};</script>`);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }); return res.end(html);
+    }
     // browsers get the website, the mod/launcher (no text/html Accept) keep getting JSON
     if (req.method === 'GET' && (String(req.headers.accept || '').includes('text/html') || /^\/(assets|img|media|fonts)\//.test(url.pathname) || /\.(css|js|png|jpg|webp|svg|mp4|webm|woff2|ico)$/.test(url.pathname))) {
       if (url.pathname !== '/admin' && serveSite(req, res, url.pathname)) return;
@@ -1641,7 +1657,7 @@ const server = http.createServer(async (req, res) => {
     if (!handler) return fail(res, 404, 'not found');
     const limit = key === 'PUT /profile/media' ? 22000000 : key === 'POST /store/listing' ? 16000000 : key === 'PUT /cosmetics' ? 6000000 : key.startsWith('POST /collab/') ? 4000000 : key === 'POST /groups/image' || key === 'POST /chat/image' ? 4500000 : key === 'POST /skins/post' ? 400000 : 2500000;
     const body = (req.method === 'POST' || req.method === 'PUT') ? await readBody(req, limit) : {};
-    const open = key === 'GET /' || key === 'GET /stats' || key.startsWith('POST /auth/') || key === 'POST /cosmetics/bulk'
+    const open = key === 'GET /' || key === 'GET /stats' || key === 'POST /overlay/link' || key.startsWith('POST /auth/') || key === 'POST /cosmetics/bulk'
       || key === 'POST /blox/np' || key === 'POST /kofi' || key === 'GET /config' || key === 'GET /kycos' || key === 'GET /mcskin' || key === 'GET /store/items' || key === 'GET /store/image' || key === 'GET /store/kycos' || key === 'GET /store/item' || key === 'GET /store/photo' || key === 'GET /chat/img' || key === 'GET /chat' || key.startsWith('GET /cf/') || key === 'GET /link/discord/callback' || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version' || key.startsWith('POST /collab/') || key === 'GET /servers' || key === 'GET /servers/one' || key === 'GET /lfg' || key === 'GET /voice' || key === 'GET /stickers'
       || ['GET /creators', 'GET /creator', 'GET /card', 'GET /leaderboards', 'GET /achievements', 'GET /skins', 'GET /skins/png', 'GET /status/info'].includes(key);
     let me = null;

@@ -961,6 +961,51 @@ function ttPush(t, ev) { ev.seq = ++t.seq; ev.at = Date.now(); t.events.push(ev)
 function ttUser(u) { u = u || {}; return { id: u.uniqueId || '', name: cleanStr(u.nickname || u.uniqueId || 'Someone', 40), avatar: (u.profilePicture && (u.profilePicture.url || u.profilePicture.urls || [])[0]) || u.profilePictureUrl || '' }; }
 function ttStop(uuid) { const t = TT.get(uuid); if (!t) return; try { t.conn && t.conn.disconnect(); } catch (e) { /* */ } TT.delete(uuid); }
 setInterval(() => { for (const [u, t] of TT) if (Date.now() - t.lastPoll > 90000) ttStop(u); }, 30000).unref();
+/* Euler Stream's cloud WebSocket: Euler watches the LIVE from their own servers (TikTok blocks Render) and sends us JSON.
+   Used first whenever EULER_API_KEY is set. Message shapes vary a little between their versions, so read them loosely. */
+function ttEuler(t, username, key) {
+  return new Promise((resolve, reject) => {
+    let WS; try { WS = require('ws'); } catch (e) { WS = globalThis.WebSocket; }
+    if (!WS) return reject(new Error('No WebSocket support on the server'));
+    const url = `wss://ws.eulerstream.com?uniqueId=${encodeURIComponent(username)}&apiKey=${encodeURIComponent(key)}`;
+    const ws = new WS(url); let opened = false, logged = 0;
+    const on = (ev, fn) => ws.on ? ws.on(ev, fn) : ws.addEventListener(ev, e => fn(ev === 'message' ? e.data : ev === 'close' ? e.code : e, e && e.reason));
+    t.conn = { disconnect: () => { try { ws.close(); } catch (e) { /* */ } } };
+    const timer = setTimeout(() => { if (!opened) { t.conn.disconnect(); reject(new Error('Euler took too long to answer')); } }, 11000);
+    on('open', () => { opened = true; clearTimeout(timer); resolve(); });
+    on('error', e => { if (!opened) { clearTimeout(timer); reject(new Error('Euler: ' + String(e && e.message || e))); } });
+    on('close', (code, reason) => {
+      clearTimeout(timer); const why = String(reason || '');
+      if (!opened) return reject(new Error(`Euler closed (${code}) ${why}`));
+      console.log('[tiktok]', username, 'Euler closed', code, why);
+      if (t.state !== 'ended') { t.state = /offline|ended|not live/i.test(why) ? 'ended' : 'disconnected'; if (t.state === 'ended') ttPush(t, { type: 'state', state: 'ended' }); }
+    });
+    on('message', raw => {
+      let j; try { j = JSON.parse(String(raw)); } catch (e) { return; }
+      if (logged < 3) { logged++; console.log('[tiktok]', username, 'Euler sample:', String(raw).slice(0, 600)); }
+      const list = Array.isArray(j) ? j : Array.isArray(j.messages) ? j.messages : [j];
+      for (const m of list) ttEulerMsg(t, m);
+    });
+  });
+}
+function ttEulerMsg(t, m) {
+  if (!m || typeof m !== 'object') return;
+  const type = String(m.type || m.event || m.method || '').toLowerCase(), d = m.data || m.message || m;
+  const user = ttUser(d.user || m.user);
+  if (/gift/.test(type)) {
+    const g = d.gift || d.giftDetails || {}, ex = d.extendedGiftInfo || {};
+    const count = d.repeatCount || g.repeatCount || d.comboCount || 1;
+    const streaky = (g.giftType === 1 || g.type === 1) || d.repeatEnd !== undefined;
+    ttPush(t, { type: 'gift', user, gift: cleanStr(g.giftName || g.name || ex.name || d.giftName || 'Gift', 40), giftId: d.giftId || g.id || 0,
+      count, done: !streaky || !!(d.repeatEnd || d.repeat_end), coins: g.diamondCount || g.diamond_count || ex.diamond_count || d.diamondCount || 0,
+      image: ((g.image || ex.image || {}).url_list || (g.image || {}).urlList || [])[0] || '' });
+  } else if (/follow/.test(type)) ttPush(t, { type: 'follow', user });
+  else if (/share/.test(type)) ttPush(t, { type: 'share', user });
+  else if (/social/.test(type)) { const txt = JSON.stringify(d).toLowerCase(); if (/follow/.test(txt)) ttPush(t, { type: 'follow', user }); else if (/share/.test(txt)) ttPush(t, { type: 'share', user }); }
+  else if (/like/.test(type)) { t.likes = d.totalLikeCount || d.totalLikes || d.total || ((t.likes || 0) + (d.likeCount || d.count || 0)); const step = 1000 * Math.floor(t.likes / 1000); if (step > (t.likeStep || 0)) { t.likeStep = step; ttPush(t, { type: 'likes', user, count: step }); } }
+  else if (/superfan|subscribe/.test(type)) ttPush(t, { type: 'superfan', user });
+  else if (/control|streamend|live_end|liveend/.test(type) && /end|3/.test(JSON.stringify(d).toLowerCase())) { t.state = 'ended'; ttPush(t, { type: 'state', state: 'ended' }); }
+}
 routes['POST /tiktok/connect'] = async (req, res, body, me) => {
   const username = String(body.username || '').replace(/^@/, '').trim();
   if (!/^[A-Za-z0-9_.]{2,24}$/.test(username)) return fail(res, 400, 'That isn\'t a TikTok username');
@@ -976,6 +1021,19 @@ routes['POST /tiktok/connect'] = async (req, res, body, me) => {
     { label: 'room id, retry', opts: { fetchRoomInfoOnConnect: false }, room: true, wait: 1500 }
   ];
   let lastErr = null; const started = Date.now();
+  if (process.env.EULER_API_KEY) {
+    try {
+      await ttEuler(t, username, process.env.EULER_API_KEY);
+      if (TT.get(me) !== t) return send(res, 200, { ok: false, error: 'Cancelled' });
+      t.state = 'live'; console.log('[tiktok]', username, 'connected (Euler cloud)');
+      return send(res, 200, { ok: true, state: 'live' });
+    } catch (e) {
+      lastErr = e; console.warn('[tiktok]', username, 'Euler cloud failed:', String(e && e.message || e));
+      const m = String(e && e.message || e);
+      if (/offline|not live|4404|404/i.test(m)) { ttStop(me); return send(res, 200, { ok: false, error: `@${username} isn't live right now (or the name is wrong)` }); }
+      if (/40[13]|invalid|api ?key|unauthor/i.test(m)) { ttStop(me); return send(res, 200, { ok: false, error: 'The EULER_API_KEY on Render is wrong' }); }
+    }
+  }
   // the mod waits 15 s for an answer, so all tries together must finish in about 13 s
   const left = () => 13000 - (Date.now() - started);
   const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('TikTok took too long to answer')), Math.max(500, ms)))]);

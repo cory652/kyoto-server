@@ -29,6 +29,12 @@
   .chk { display: flex; align-items: center; gap: 9px; margin: 0 0 10px; cursor: pointer; font-size: 13px; } .chk input { width: auto; accent-color: #ff8fd0; }
   .slides { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
   .stage { position: relative; aspect-ratio: 16 / 9; border-radius: 20px; overflow: hidden; border: 1px solid var(--line); background: #000 center / cover; box-shadow: 0 30px 80px rgba(0,0,0,.6); }
+  .orient { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 18px; } .orient button { display: grid; gap: 2px; padding: 10px; border-radius: 14px; text-align: left; font: 700 13px Poppins; } .orient button small { font: 500 11px Inter; color: inherit; opacity: .7; }
+  .stage.v { aspect-ratio: 9 / 16; max-width: 430px; margin: 0 auto; }
+  .safe { position: absolute; inset: 0; pointer-events: none; display: none; } .stage.v.guides .safe { display: block; }
+  .safe i { position: absolute; background: repeating-linear-gradient(45deg, rgba(255,80,110,.18) 0 8px, rgba(255,80,110,.08) 8px 16px); border: 1px dashed rgba(255,120,140,.6); }
+  .safe i span { position: absolute; left: 8px; top: 6px; font: 600 10px Inter; color: #ffc1cc; }
+  .safe .t { left: 0; right: 0; top: 0; height: 13%; } .safe .r { right: 0; top: 13%; bottom: 32%; width: 12%; } .safe .b { left: 0; right: 0; bottom: 0; height: 32%; }
   .stage iframe { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; border: 0; transform-origin: 0 0; background: transparent; }
   .stage .lbl { position: absolute; left: 14px; top: 14px; padding: 5px 11px; border-radius: 999px; background: rgba(0,0,0,.55); font: 600 12px Inter; backdrop-filter: blur(8px); }
   .bgpick { display: flex; gap: 8px; margin: 12px 0 18px; } .bgpick button { width: 70px; height: 40px; border-radius: 9px; border: 2px solid transparent; background: center / cover; cursor: pointer; } .bgpick button.on { border-color: #fff; }
@@ -43,6 +49,7 @@
 <header><img src="/img/logos/logo_k_starry.png" alt=""><div><b>Stream overlay</b><br><span>Show Kyoto on your stream. Pick a style, copy the link, paste it into OBS.</span></div><a class="back" href="/">Kyoto website</a></header>
 <main>
   <div class="panel">
+    <h3>Stream shape</h3><div class="seg orient" id="orient"><button data-o="h" class="on">Horizontal 16:9<small>OBS, Twitch, YouTube</small></button><button data-o="v">Vertical 9:16<small>TikTok LIVE, Shorts</small></button></div>
     <h3>Style</h3><p class="hint">You can add more than one: e.g. a Badge plus a Pop card, or a Scene for your starting screen.</p>
     <div class="modes" id="modes">
       <button data-m="pop" class="on"><b>Pop card</b><span>Pops up every so often with slides</span></button>
@@ -68,12 +75,13 @@
     <label class="chk"><input type="checkbox" id="qr" checked> Show QR codes</label>
   </div>
   <div>
-    <div class="stage" id="stage"><iframe id="pv" title="Preview"></iframe><span class="lbl">Live preview</span></div>
+    <div class="stage" id="stage"><iframe id="pv" title="Preview"></iframe><div class="safe"><i class="t"><span>TikTok: name + viewers</span></i><i class="r"><span>Buttons</span></i><i class="b"><span>Comments + gifts</span></i></div><span class="lbl">Live preview</span></div>
+    <label class="chk" id="guideRow" hidden style="margin-top:12px"><input type="checkbox" id="guides" checked> Show where TikTok covers the screen</label>
     <div class="bgpick" id="bgs"></div>
     <div class="url"><input id="url" readonly><button class="btn" id="copy">Copy link</button><button class="btn ghost" id="open">Open</button></div>
     <div class="steps">
       <div><b>1. Add a Browser Source</b><p>In OBS: Sources > + > Browser. (TikTok LIVE Studio and Streamlabs: "Link" or "Browser source".)</p></div>
-      <div><b>2. Paste the link</b><p>Set width <code>1920</code> and height <code>1080</code>. Leave custom CSS empty.</p></div>
+      <div><b>2. Paste the link</b><p id="sizeHint">Set width <code>1920</code> and height <code>1080</code>. Leave custom CSS empty.</p></div>
       <div><b>3. Done</b><p>It stretches to your canvas. Put it above your game. Free servers sleep, so the player count may take a minute to show.</p></div>
     </div>
   </div>
@@ -82,19 +90,24 @@
 <script>
 'use strict';
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
-const S = { mode: 'pop', pos: 'br', theme: 'sakura', slides: ['brand', 'get', 'live', 'feature', 'me', 'studio', 'launcher'], bg: 'starry' };
-const POS = [['br', 'Bottom right'], ['bl', 'Bottom left'], ['tr', 'Top right'], ['tl', 'Top left'], ['bottom', 'Bottom middle'], ['top', 'Top middle']];
+const S = { orient: 'h', mode: 'pop', pos: 'br', theme: 'sakura', slides: ['brand', 'get', 'live', 'feature', 'me', 'studio', 'launcher'], bg: 'starry' };
+const POS_H = [['br', 'Bottom right'], ['bl', 'Bottom left'], ['tr', 'Top right'], ['tl', 'Top left'], ['bottom', 'Bottom middle'], ['top', 'Top middle']];
+const POS_V = [['top', 'Top'], ['mid', 'Middle'], ['bottom', 'Above comments'], ['tl', 'Top left'], ['tr', 'Top right']];
+let POS = POS_H;
 const THEMES = [['sakura', 'linear-gradient(135deg,#ff8fd0,#a98bff,#8fd8ff)'], ['night', 'linear-gradient(135deg,#7c9bff,#6a5cff,#8fe7ff)'], ['sunset', 'linear-gradient(135deg,#ffb05c,#ff5d8f,#ffd36b)'], ['mint', 'linear-gradient(135deg,#6dffc0,#45d8ff,#b8ffdf)'], ['mono', 'linear-gradient(135deg,#fff,#b9bcc6)']];
 const SLIDES = [['brand', 'Playing on Kyoto'], ['get', 'Get it (QR)'], ['live', 'Players online'], ['feature', 'Features'], ['me', 'My level card'], ['studio', 'Kyoto Studio'], ['launcher', 'Kyoto Launcher']];
 const BGS = ['starry', 'spring', 'summer', 'fall', 'winter', 'christmas'];
-$('#pos').innerHTML = POS.map(([k, n]) => `<button data-p="${k}" class="${S.pos === k ? 'on' : ''}">${n}</button>`).join('');
+function drawPos() { POS = S.orient === 'v' ? POS_V : POS_H; if (!POS.some(p => p[0] === S.pos)) S.pos = POS[0][0];
+  $('#pos').innerHTML = POS.map(([k, n]) => `<button data-p="${k}" class="${S.pos === k ? 'on' : ''}">${n}</button>`).join('');
+  $$('[data-p]').forEach(b => b.onclick = () => { S.pos = b.dataset.p; $$('[data-p]').forEach(x => x.classList.toggle('on', x === b)); update(); }); }
+drawPos();
 $('#themes').innerHTML = THEMES.map(([k, g]) => `<button data-t="${k}" title="${k}" class="${S.theme === k ? 'on' : ''}" style="background:${g}"></button>`).join('');
 $('#slides').innerHTML = SLIDES.map(([k, n]) => `<button data-s="${k}" class="on">${n}</button>`).join('');
 $('#bgs').innerHTML = BGS.map(b => `<button data-b="${b}" class="${b === S.bg ? 'on' : ''}" style="background-image:url(/img/${b}.webp)" title="Preview background"></button>`).join('');
 function build() {
-  const p = new URLSearchParams(); p.set('mode', S.mode);
+  const p = new URLSearchParams(); p.set('mode', S.mode); if (S.orient === 'v') p.set('layout', 'vertical');
   if (S.mode === 'scene') { p.set('scene', $('#scene').value); if (Number($('#timer').value)) p.set('timer', $('#timer').value); if ($('#title').value.trim()) p.set('title', $('#title').value.trim()); }
-  else { p.set('pos', S.mode === 'bar' ? 'bottom' : S.pos); }
+  else if (S.mode !== 'bar') p.set('pos', S.pos);
   if (S.mode === 'pop') { p.set('every', $('#every').value); p.set('show', $('#show').value); if (S.slides.length && S.slides.length < SLIDES.length) p.set('slides', S.slides.join(',')); }
   const n = $('#name').value.trim(); if (/^[A-Za-z0-9_]{2,16}$/.test(n)) p.set('name', n);
   if ($('#scale').value !== '1') p.set('scale', $('#scale').value);
@@ -109,16 +122,22 @@ function update() {
   // preview: pop-ups show right away and stay up
   clearTimeout(t); t = setTimeout(() => { $('#pv').src = u.replace('/overlay?', '/overlay?') + (S.mode === 'pop' ? '&every=0' : ''); }, 250);
 }
-function fit() { const w = $('#stage').clientWidth; $('#pv').style.transform = `scale(${w / 1920})`; }
+function fit() {
+  const v = S.orient === 'v', st = $('#stage'); st.classList.toggle('v', v); st.classList.toggle('guides', v && $('#guides').checked); $('#guideRow').hidden = !v;
+  $('#pv').style.width = (v ? 1080 : 1920) + 'px'; $('#pv').style.height = (v ? 1920 : 1080) + 'px';
+  $('#pv').style.transform = `scale(${st.clientWidth / (v ? 1080 : 1920)})`;
+  $('#sizeHint').innerHTML = v ? 'Set width <code>1080</code> and height <code>1920</code>. TikTok LIVE Studio: add a "Link" source.' : 'Set width <code>1920</code> and height <code>1080</code>. Leave custom CSS empty.';
+}
 addEventListener('resize', fit); fit();
 $$('[data-m]').forEach(b => b.onclick = () => { S.mode = b.dataset.m; $$('[data-m]').forEach(x => x.classList.toggle('on', x === b)); update(); });
-$$('[data-p]').forEach(b => b.onclick = () => { S.pos = b.dataset.p; $$('[data-p]').forEach(x => x.classList.toggle('on', x === b)); update(); });
+$$('[data-o]').forEach(b => b.onclick = () => { S.orient = b.dataset.o; $$('[data-o]').forEach(x => x.classList.toggle('on', x === b)); drawPos(); fit(); update(); });
+$('#guides').onchange = () => $('#stage').classList.toggle('guides', $('#guides').checked);
 $$('[data-t]').forEach(b => b.onclick = () => { S.theme = b.dataset.t; $$('[data-t]').forEach(x => x.classList.toggle('on', x === b)); update(); });
 $$('[data-s]').forEach(b => b.onclick = () => { const k = b.dataset.s; S.slides = S.slides.includes(k) ? S.slides.filter(x => x !== k) : S.slides.concat(k); if (!S.slides.length) S.slides = [k]; $$('[data-s]').forEach(x => x.classList.toggle('on', S.slides.includes(x.dataset.s))); update(); });
 $$('[data-b]').forEach(b => b.onclick = () => { S.bg = b.dataset.b; $$('[data-b]').forEach(x => x.classList.toggle('on', x === b)); $('#stage').style.backgroundImage = `url(/img/${S.bg}.webp)`; });
 ['scene', 'timer', 'title', 'every', 'show', 'name', 'scale', 'qr'].forEach(id => $('#' + id).addEventListener(id === 'name' || id === 'title' ? 'input' : 'change', update));
 $('#stage').style.backgroundImage = `url(/img/${S.bg}.webp)`;
-$('#copy').onclick = () => navigator.clipboard.writeText($('#url').value).then(() => { $('#toast').textContent = 'Copied! Paste it into an OBS Browser Source (1920 x 1080).'; $('#toast').classList.add('on'); setTimeout(() => $('#toast').classList.remove('on'), 2600); });
+$('#copy').onclick = () => navigator.clipboard.writeText($('#url').value).then(() => { $('#toast').textContent = `Copied! Paste it into a Browser Source (${S.orient === 'v' ? '1080 x 1920' : '1920 x 1080'}).`; $('#toast').classList.add('on'); setTimeout(() => $('#toast').classList.remove('on'), 2600); });
 $('#open').onclick = () => open($('#url').value, '_blank');
 update();
 </script>

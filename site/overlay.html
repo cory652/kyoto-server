@@ -12,6 +12,8 @@
         bar     lower-third bar with a scrolling ticker
         scene   full screen: Starting soon / BRB / Ending (use with ?scene=start|brb|end&timer=5)
         qr      just the "scan to get Kyoto" card
+  Vertical streams (TikTok LIVE, Shorts): add ?layout=vertical and make the Browser Source 1080 x 1920.
+    It keeps clear of TikTok's top bar, side buttons and the comments. pos=top|mid|bottom (+ tl/tr/bl/br)
   ?pos=br|bl|tr|tl|bottom|top   ?scale=1 (0.5-2)   ?every=45 (seconds between pop-ups, 0 = always up)   ?show=14
   ?name=YourMinecraftName   adds your level card     ?theme=sakura|night|sunset|mint|mono
   ?slides=brand,get,live,feature,me,studio,launcher   ?title=Custom text (scene)   ?qr=0 hides QR codes
@@ -160,6 +162,29 @@
   .scene .ticker { position: absolute; left: 0; right: 0; bottom: 52px; height: 64px; overflow: hidden; mask: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
   .scene .ticker .track { animation-duration: 60s; }
   .scene .ticker .item { font-size: 22px; color: rgba(255,255,255,.88); }
+
+  /* ============ VERTICAL (1080 x 1920) ============ */
+  /* TikTok covers roughly: top 250px (host + viewers), right 150px (buttons), bottom 620px (comments + gifts) */
+  .vert .anchor { padding: 40px; }
+  .vert .anchor.tl, .vert .anchor.tr, .vert .anchor.top { top: 250px; } .vert .anchor.tr, .vert .anchor.br { right: 130px; }
+  .vert .anchor.bl, .vert .anchor.br, .vert .anchor.bottom { bottom: 600px; }
+  .vert .anchor.mid { left: 50%; top: 50%; transform: translate(-50%, -50%); } .vert .mid .sc { transform-origin: center; }
+  .vert .anchor.top, .vert .anchor.bottom { left: 0; right: 130px; transform: none; display: flex; justify-content: center; }
+  .vert .pop { width: 800px; height: 200px; } .vert .pop .inner { grid-template-columns: 160px 1fr; gap: 22px; }
+  .vert .art { width: 150px; height: 150px; } .vert .tile { width: 138px; height: 138px; } .vert .tile img.logo { width: 108px; height: 108px; }
+  .vert .title { font-size: 46px; } .vert .title.site { font-size: 28px; } .vert .sub { font-size: 19px; }
+  .vert .barwrap { left: 30px; right: 130px; top: 260px; bottom: auto; }
+  .vert .bar { height: 96px; grid-template-columns: auto 1fr; } .vert .bar .get { display: none; } .vert .bar .brand b { font-size: 25px; } .vert .bar .brand img { width: 62px; height: 62px; }
+  .vert .marquee .item { font-size: 21px; }
+  /* full scene, stacked */
+  .vert .scene .center { top: 230px; } .vert .scene .biglogo { width: 170px; height: 170px; }
+  .vert .scene .kicker { margin-top: 36px; font-size: 19px; letter-spacing: .3em; } .vert .scene h1 { font-size: 112px; letter-spacing: -2px; padding: 0 40px; line-height: 1.02; }
+  .vert .scene .timer { font-size: 58px; }
+  .vert .scene .row { left: 60px; right: 60px; top: 790px; bottom: auto; grid-template-columns: 1fr; gap: 20px; }
+  .vert .scene .card { min-height: 0; padding: 24px 28px; }
+  .vert .scene .fslot { height: 128px; } .vert .scene .fslot b { font-size: 32px; }
+  .vert .scene .livec .num { font-size: 76px; }
+  .vert .scene .ticker { bottom: 70px; }
 </style>
 </head>
 <body>
@@ -169,8 +194,9 @@
 'use strict';
 const Q = new URLSearchParams(location.search);
 const MODE = (Q.get('mode') || 'pop').toLowerCase();
-const POS = ['br', 'bl', 'tr', 'tl', 'bottom', 'top'].includes(Q.get('pos')) ? Q.get('pos') : 'br';
-const SCALE = Math.min(2, Math.max(.5, Number(Q.get('scale')) || 1));
+const VERT = Q.get('layout') === 'vertical' || (Q.get('layout') !== 'horizontal' && innerHeight > innerWidth * 1.2);
+const POS = ['br', 'bl', 'tr', 'tl', 'bottom', 'top', 'mid'].includes(Q.get('pos')) ? (Q.get('pos') === 'mid' && !VERT ? 'bottom' : Q.get('pos')) : VERT ? 'top' : 'br';
+const SCALE_IN = Math.min(2, Math.max(.5, Number(Q.get('scale')) || 1));
 const EVERY = Q.has('every') ? Math.max(0, Number(Q.get('every')) || 0) : 45;
 const SHOW = Math.max(6, Number(Q.get('show')) || 15);
 const NAME = /^[A-Za-z0-9_]{2,16}$/.test(Q.get('name') || '') ? Q.get('name') : '';
@@ -180,7 +206,9 @@ const API = location.protocol === 'file:' ? 'https://kyoto-server.onrender.com' 
 const LOGO = '/img/logos/logo_k_' + (() => { const d = new Date(), m = d.getMonth() + 1, day = d.getDate();
   if (m === 12 && day >= 27 || m === 1 && day <= 2) return 'newyear'; if (m === 12) return 'christmas'; if (m === 10 && day >= 15) return 'halloween';
   if (m === 11 && day <= 28) return 'thanksgiving'; if (m >= 3 && m <= 5) return 'spring'; if (m >= 6 && m <= 8) return 'summer'; if (m >= 9 && m <= 11) return 'fall'; return 'starry'; })() + '.png';
-document.body.className = 't-' + (Q.get('theme') || 'sakura');
+// phones are small: on vertical streams everything starts a bit bigger
+const SCALE = SCALE_IN * (VERT ? ({ badge: 1.5, qr: 1.4, pop: 1.12 }[MODE] || 1) : 1);
+document.body.className = 't-' + (Q.get('theme') || 'sakura') + (VERT ? ' vert' : '');
 document.documentElement.style.setProperty('--s', SCALE);
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

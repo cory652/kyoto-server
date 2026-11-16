@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kyoto stream overlay - setup</title>
+<link rel="icon" href="/img/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
+<style>
+  :root { --line: rgba(255,255,255,.1); --mut: #9aa0aa; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: radial-gradient(80% 60% at 70% 0%, #2a1446 0%, #0b0812 55%) fixed, #0b0812; color: #f1f2f5; font: 500 14px Inter, system-ui, sans-serif; }
+  a { color: inherit; }
+  header { display: flex; align-items: center; gap: 14px; padding: 22px 32px; }
+  header img { width: 40px; height: 40px; border-radius: 11px; } header b { font: 800 20px Poppins; } header span { color: var(--mut); } header a.back { margin-left: auto; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); text-decoration: none; }
+  main { display: grid; grid-template-columns: 380px 1fr; gap: 26px; padding: 0 32px 40px; align-items: start; }
+  .panel { padding: 20px; border-radius: 22px; background: rgba(16,14,24,.8); border: 1px solid var(--line); position: sticky; top: 20px; }
+  h3 { margin: 0 0 4px; font: 700 15px Poppins; } .hint { margin: 0 0 14px; color: var(--mut); font-size: 12.5px; line-height: 1.5; }
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 18px; }
+  .modes button { display: grid; gap: 2px; text-align: left; padding: 12px; border-radius: 14px; border: 1.5px solid var(--line); background: rgba(255,255,255,.03); color: inherit; font: inherit; cursor: pointer; transition: border-color .2s, background .2s; }
+  .modes button b { font: 700 14px Poppins; } .modes button span { font-size: 11.5px; color: var(--mut); } .modes button:hover { background: rgba(255,255,255,.07); } .modes button.on { border-color: #ff8fd0; background: rgba(255,143,208,.08); }
+  label.f { display: grid; gap: 6px; margin: 0 0 14px; font-size: 12.5px; color: #c9ccd4; }
+  input, select { width: 100%; padding: 10px 12px; border-radius: 11px; border: 1px solid var(--line); background: rgba(0,0,0,.35); color: #fff; font: 500 14px Inter; outline: none; } input:focus, select:focus { border-color: rgba(255,143,208,.6); }
+  input[type=range] { padding: 0; accent-color: #ff8fd0; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .seg { display: flex; flex-wrap: wrap; gap: 6px; } .seg button { padding: 7px 11px; border-radius: 999px; border: 1px solid var(--line); background: none; color: #d9dce3; font: 600 12px Inter; cursor: pointer; } .seg button.on { background: #fff; color: #0b0812; }
+  .themes button { width: 34px; height: 34px; border-radius: 50%; padding: 0; border: 2px solid transparent; } .themes button.on { border-color: #fff; }
+  .chk { display: flex; align-items: center; gap: 9px; margin: 0 0 10px; cursor: pointer; font-size: 13px; } .chk input { width: auto; accent-color: #ff8fd0; }
+  .slides { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .stage { position: relative; aspect-ratio: 16 / 9; border-radius: 20px; overflow: hidden; border: 1px solid var(--line); background: #000 center / cover; box-shadow: 0 30px 80px rgba(0,0,0,.6); }
+  .stage iframe { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; border: 0; transform-origin: 0 0; background: transparent; }
+  .stage .lbl { position: absolute; left: 14px; top: 14px; padding: 5px 11px; border-radius: 999px; background: rgba(0,0,0,.55); font: 600 12px Inter; backdrop-filter: blur(8px); }
+  .bgpick { display: flex; gap: 8px; margin: 12px 0 18px; } .bgpick button { width: 70px; height: 40px; border-radius: 9px; border: 2px solid transparent; background: center / cover; cursor: pointer; } .bgpick button.on { border-color: #fff; }
+  .url { display: flex; gap: 8px; } .url input { font: 600 13px 'JetBrains Mono', monospace; }
+  .btn { padding: 11px 18px; border-radius: 999px; border: 0; background: linear-gradient(135deg, #fff, #ffc2e5); color: #12081f; font: 700 14px Poppins; cursor: pointer; white-space: nowrap; } .btn.ghost { background: rgba(255,255,255,.06); color: #fff; border: 1px solid var(--line); }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; } .steps div { padding: 16px; border-radius: 16px; background: rgba(16,14,24,.8); border: 1px solid var(--line); } .steps b { display: block; font: 700 14px Poppins; margin-bottom: 4px; } .steps p { margin: 0; color: var(--mut); font-size: 12.5px; line-height: 1.5; } .steps code { color: #fff; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); padding: 12px 18px; border-radius: 14px; background: #1a1626; border: 1px solid var(--line); font-weight: 600; opacity: 0; transition: opacity .3s; } .toast.on { opacity: 1; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } .panel { position: static; } .steps { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header><img src="/img/logos/logo_k_starry.png" alt=""><div><b>Stream overlay</b><br><span>Show Kyoto on your stream. Pick a style, copy the link, paste it into OBS.</span></div><a class="back" href="/">Kyoto website</a></header>
+<main>
+  <div class="panel">
+    <h3>Style</h3><p class="hint">You can add more than one: e.g. a Badge plus a Pop card, or a Scene for your starting screen.</p>
+    <div class="modes" id="modes">
+      <button data-m="pop" class="on"><b>Pop card</b><span>Pops up every so often with slides</span></button>
+      <button data-m="badge"><b>Badge</b><span>Small, always on screen</span></button>
+      <button data-m="bar"><b>Lower bar</b><span>Scrolling ticker along the bottom</span></button>
+      <button data-m="qr"><b>QR code</b><span>"Scan to get Kyoto"</span></button>
+      <button data-m="scene"><b>Full scene</b><span>Starting soon / BRB / Ending</span></button>
+    </div>
+    <div id="optScene" hidden>
+      <div class="two"><label class="f">Scene<select id="scene"><option value="start">Starting soon</option><option value="brb">Be right back</option><option value="end">Ending</option></select></label>
+      <label class="f">Countdown (minutes)<input id="timer" type="number" min="0" max="120" value="5"></label></div>
+      <label class="f">Big title (optional)<input id="title" maxlength="40" placeholder="Starting soon"></label>
+    </div>
+    <div id="optPos"><label class="f">Corner</label><div class="seg" id="pos" style="margin:-6px 0 14px"></div></div>
+    <div id="optPop">
+      <div class="two"><label class="f">Pops up every<select id="every"><option value="30">30 seconds</option><option value="45" selected>45 seconds</option><option value="60">1 minute</option><option value="120">2 minutes</option><option value="300">5 minutes</option><option value="0">Always on screen</option></select></label>
+      <label class="f">Stays up for<select id="show"><option value="10">10 seconds</option><option value="15" selected>15 seconds</option><option value="21">21 seconds</option></select></label></div>
+      <label class="f">Slides</label><div class="seg slides" id="slides"></div>
+    </div>
+    <label class="f">Your Minecraft name (shows your level card)<input id="name" maxlength="16" placeholder="heffm"></label>
+    <label class="f">Size <input id="scale" type="range" min="0.6" max="1.6" step="0.05" value="1"></label>
+    <label class="f">Colours</label><div class="seg themes" id="themes" style="margin:-6px 0 14px"></div>
+    <label class="chk"><input type="checkbox" id="qr" checked> Show QR codes</label>
+  </div>
+  <div>
+    <div class="stage" id="stage"><iframe id="pv" title="Preview"></iframe><span class="lbl">Live preview</span></div>
+    <div class="bgpick" id="bgs"></div>
+    <div class="url"><input id="url" readonly><button class="btn" id="copy">Copy link</button><button class="btn ghost" id="open">Open</button></div>
+    <div class="steps">
+      <div><b>1. Add a Browser Source</b><p>In OBS: Sources > + > Browser. (TikTok LIVE Studio and Streamlabs: "Link" or "Browser source".)</p></div>
+      <div><b>2. Paste the link</b><p>Set width <code>1920</code> and height <code>1080</code>. Leave custom CSS empty.</p></div>
+      <div><b>3. Done</b><p>It stretches to your canvas. Put it above your game. Free servers sleep, so the player count may take a minute to show.</p></div>
+    </div>
+  </div>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+'use strict';
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const S = { mode: 'pop', pos: 'br', theme: 'sakura', slides: ['brand', 'get', 'live', 'feature', 'me', 'studio', 'launcher'], bg: 'starry' };
+const POS = [['br', 'Bottom right'], ['bl', 'Bottom left'], ['tr', 'Top right'], ['tl', 'Top left'], ['bottom', 'Bottom middle'], ['top', 'Top middle']];
+const THEMES = [['sakura', 'linear-gradient(135deg,#ff8fd0,#a98bff,#8fd8ff)'], ['night', 'linear-gradient(135deg,#7c9bff,#6a5cff,#8fe7ff)'], ['sunset', 'linear-gradient(135deg,#ffb05c,#ff5d8f,#ffd36b)'], ['mint', 'linear-gradient(135deg,#6dffc0,#45d8ff,#b8ffdf)'], ['mono', 'linear-gradient(135deg,#fff,#b9bcc6)']];
+const SLIDES = [['brand', 'Playing on Kyoto'], ['get', 'Get it (QR)'], ['live', 'Players online'], ['feature', 'Features'], ['me', 'My level card'], ['studio', 'Kyoto Studio'], ['launcher', 'Kyoto Launcher']];
+const BGS = ['starry', 'spring', 'summer', 'fall', 'winter', 'christmas'];
+$('#pos').innerHTML = POS.map(([k, n]) => `<button data-p="${k}" class="${S.pos === k ? 'on' : ''}">${n}</button>`).join('');
+$('#themes').innerHTML = THEMES.map(([k, g]) => `<button data-t="${k}" title="${k}" class="${S.theme === k ? 'on' : ''}" style="background:${g}"></button>`).join('');
+$('#slides').innerHTML = SLIDES.map(([k, n]) => `<button data-s="${k}" class="on">${n}</button>`).join('');
+$('#bgs').innerHTML = BGS.map(b => `<button data-b="${b}" class="${b === S.bg ? 'on' : ''}" style="background-image:url(/img/${b}.webp)" title="Preview background"></button>`).join('');
+function build() {
+  const p = new URLSearchParams(); p.set('mode', S.mode);
+  if (S.mode === 'scene') { p.set('scene', $('#scene').value); if (Number($('#timer').value)) p.set('timer', $('#timer').value); if ($('#title').value.trim()) p.set('title', $('#title').value.trim()); }
+  else { p.set('pos', S.mode === 'bar' ? 'bottom' : S.pos); }
+  if (S.mode === 'pop') { p.set('every', $('#every').value); p.set('show', $('#show').value); if (S.slides.length && S.slides.length < SLIDES.length) p.set('slides', S.slides.join(',')); }
+  const n = $('#name').value.trim(); if (/^[A-Za-z0-9_]{2,16}$/.test(n)) p.set('name', n);
+  if ($('#scale').value !== '1') p.set('scale', $('#scale').value);
+  if (S.theme !== 'sakura') p.set('theme', S.theme);
+  if (!$('#qr').checked) p.set('qr', '0');
+  return `${location.origin}/overlay?${p.toString()}`;
+}
+let t;
+function update() {
+  $('#optScene').hidden = S.mode !== 'scene'; $('#optPos').hidden = S.mode === 'scene' || S.mode === 'bar'; $('#optPop').hidden = S.mode !== 'pop';
+  const u = build(); $('#url').value = u;
+  // preview: pop-ups show right away and stay up
+  clearTimeout(t); t = setTimeout(() => { $('#pv').src = u.replace('/overlay?', '/overlay?') + (S.mode === 'pop' ? '&every=0' : ''); }, 250);
+}
+function fit() { const w = $('#stage').clientWidth; $('#pv').style.transform = `scale(${w / 1920})`; }
+addEventListener('resize', fit); fit();
+$$('[data-m]').forEach(b => b.onclick = () => { S.mode = b.dataset.m; $$('[data-m]').forEach(x => x.classList.toggle('on', x === b)); update(); });
+$$('[data-p]').forEach(b => b.onclick = () => { S.pos = b.dataset.p; $$('[data-p]').forEach(x => x.classList.toggle('on', x === b)); update(); });
+$$('[data-t]').forEach(b => b.onclick = () => { S.theme = b.dataset.t; $$('[data-t]').forEach(x => x.classList.toggle('on', x === b)); update(); });
+$$('[data-s]').forEach(b => b.onclick = () => { const k = b.dataset.s; S.slides = S.slides.includes(k) ? S.slides.filter(x => x !== k) : S.slides.concat(k); if (!S.slides.length) S.slides = [k]; $$('[data-s]').forEach(x => x.classList.toggle('on', S.slides.includes(x.dataset.s))); update(); });
+$$('[data-b]').forEach(b => b.onclick = () => { S.bg = b.dataset.b; $$('[data-b]').forEach(x => x.classList.toggle('on', x === b)); $('#stage').style.backgroundImage = `url(/img/${S.bg}.webp)`; });
+['scene', 'timer', 'title', 'every', 'show', 'name', 'scale', 'qr'].forEach(id => $('#' + id).addEventListener(id === 'name' || id === 'title' ? 'input' : 'change', update));
+$('#stage').style.backgroundImage = `url(/img/${S.bg}.webp)`;
+$('#copy').onclick = () => navigator.clipboard.writeText($('#url').value).then(() => { $('#toast').textContent = 'Copied! Paste it into an OBS Browser Source (1920 x 1080).'; $('#toast').classList.add('on'); setTimeout(() => $('#toast').classList.remove('on'), 2600); });
+$('#open').onclick = () => open($('#url').value, '_blank');
+update();
+</script>
+</body>
+</html>

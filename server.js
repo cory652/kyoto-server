@@ -1537,6 +1537,7 @@ function serveSite(req, res, pathname) {
   let rel = decodeURIComponent(pathname);
   if (rel === '/' || /^\/(edit|mod|u\/[A-Za-z0-9_]{1,16}|download|features|profile|news|news\/[\w-]{1,40}|changelog|store|cosmetics|hub|hub\/(?:chat|dms|voice|lfg|servers|trades|mods)|rooms|studio|creators|leaderboards|skins|wishlist|invite|status|card|achievements|(?:creator|card|achievements|wishlist)\/[A-Za-z0-9_]{1,16})\/?$/.test(rel)) rel = '/index.html';
   if (/^\/overlay\/?$/.test(rel)) rel = '/overlay.html';
+  else if (/^\/overlay\/setup\/?$/.test(rel)) rel = '/overlay-setup.html';
   if (/^\/builder\/?$/.test(rel)) rel = '/builder.html';
   if (/^\/(build|timelapse)\/?$/.test(rel)) rel = '/build.html';
   const file = path.normalize(path.join(SITE, rel));

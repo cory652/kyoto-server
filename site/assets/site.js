@@ -3,7 +3,7 @@
 const CONFIG = {
   // The Kyoto server. Same server hosts this site, so normally it's just this page's address.
   api: /onrender\.com$|localhost|127\.0\.0\.1/.test(location.hostname) ? location.origin : 'https://kyoto-server.onrender.com',
-  launcherUrl: 'https://cdn.discordapp.com/attachments/1571013133319933982/1571013394113237073/Kyoto_Launcher.exe?ex=6af92fbd&is=6af7de3d&hm=53eaec80108ab0c99fd950e26e0a9c1d051144dd82411bfd4861ce9d9bb07f8c&',   // >>> link to KyotoLauncher.exe (Discord attachment, GitHub release...) <<<
+  launcherUrl: 'https://github.com/kyotoclient/kyoto-server/releases/download/v6.11.0/Kyoto.Launcher.exe',   // >>> link to KyotoLauncher.exe (Discord attachment, GitHub release...) <<<
   discordUrl: '',    // >>> your Discord invite <<<
   // >>> your socials (leave '' to hide one) <<<
   socials: { discord: '', tiktok: '', youtube: '', twitch: '', x: '', instagram: '' },

@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Playfair+Display:wght@600;800&family=Silkscreen&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/site.css?v=12">
-<link rel="stylesheet" href="/assets/home.css?v=5">
+<link rel="stylesheet" href="/assets/home.css?v=9">
 </head>
 <body>
 <div id="sky"><div id="art"></div><canvas id="stars"></canvas><div class="vignette"></div><div class="grain"></div></div>
@@ -28,7 +28,7 @@
         <button class="acct-me" id="acctMe" hidden><img id="acctHead" alt=""><span id="acctName"></span><i class="acct-plus" id="acctPlus" hidden>+</i>__I_chevron__</button>
         <div class="acct-menu" id="acctMenu" hidden>
           <div class="am-head"><img id="amHead" alt=""><div><b id="amName"></b><span>Logged in on this device</span></div></div>
-          <a id="amProfile" href="/" data-link>__I_eye__ My profile</a><a href="/edit" data-link>__I_palette__ Edit profile</a><a href="/builder">__I_cape__ Cosmetic Builder</a>
+          <a id="amProfile" href="/" data-link>__I_eye__ My profile</a><a href="/edit" data-link>__I_palette__ Edit profile</a><a href="/card" data-link>__I_idcard__ My player card</a><a href="/achievements" data-link>__I_trophy__ Achievements</a><a href="/wishlist" data-link>__I_heart__ Wishlist</a><a href="/invite" data-link>__I_userplus__ Invite friends</a><a href="/builder">__I_cape__ Cosmetic Builder</a>
           <button id="amLogout">__I_logout__ Log out</button>
         </div>
       </div>
@@ -38,7 +38,7 @@
   </div>
   <nav class="nav-sub">
     <a href="/news" data-link>News</a><a href="/changelog" data-link>Changelog</a><a href="/#features" data-link>Features</a><a href="/store" data-link>Cosmetics</a><a href="/studio" data-link>Studio</a>
-    <a href="/hub" data-link>Hub</a><a href="/download#faq" data-link>Support</a>
+    <a href="/hub" data-link>Hub</a><a href="/creators" data-link>Community</a><a href="/download#faq" data-link>Support</a>
     <a href="/#socials" data-link>Socials</a><a href="/#plus" data-link class="plus-link">Kyoto+</a>
   </nav>
 </header>
@@ -46,7 +46,7 @@
 <div id="menu" hidden>
   <div class="menu-inner">
     <nav class="menu-links">
-      <a href="/news" data-link>News</a><a href="/changelog" data-link>Changelog</a><a href="/#features" data-link>Features</a><a href="/store" data-link>Cosmetics</a><a href="/hub" data-link>Hub</a>
+      <a href="/news" data-link>News</a><a href="/changelog" data-link>Changelog</a><a href="/#features" data-link>Features</a><a href="/store" data-link>Cosmetics</a><a href="/hub" data-link>Hub</a><a href="/creators" data-link>Creators</a><a href="/leaderboards" data-link>Leaderboards</a><a href="/skins" data-link>Skin gallery</a><a href="/wishlist" data-link>Wishlist</a><a href="/invite" data-link>Invite friends</a>
       <a href="/studio" data-link>Kyoto Studio</a><a href="/download" data-link>Download</a><a href="/download#faq" data-link>Support</a><a href="/edit" data-link>Edit profile</a>
     </nav>
     <div class="menu-side"><img class="logo-k" src="/img/logos/logo_k_starry.png" alt=""><p>The best client is just a mod.</p><div class="soc" id="menuSoc"></div></div>
@@ -190,7 +190,7 @@
     <div class="phero-acts"><button class="btn glow" id="cosSell">__I_plus__ Post a cosmetic</button><a class="btn ghost" href="/studio" data-link>__I_sparkles__ Make one in Kyoto Studio</a><span class="coinpill" id="cosCoins">__I_coin__ <b>0</b> coins</span></div></header>
   <div class="sbar">
     <div class="ntabs big" id="cosView"><button class="on" data-cv="browse">Browse</button><button data-cv="locker">My Locker</button></div>
-    <div class="sbar-r"><div class="ntabs" id="storeKinds"><button class="on" data-sk="all">Everything</button><button data-sk="kycos">Cosmetics</button><button data-sk="cape">Capes</button></div>
+    <div class="sbar-r"><div class="ntabs" id="storeKinds"><button class="on" data-sk="all">Everything</button><button data-sk="kycos">Cosmetics</button><button data-sk="cape">Capes</button><button data-sk="pack">Packs</button></div>
       <div class="ntabs" id="storeSort"><button class="on" data-ss="top">Top</button><button data-ss="new">New</button><button data-ss="owned">Popular</button></div></div></div>
   <section class="sgrid" id="storeGrid"></section>
 </main>
@@ -202,17 +202,52 @@
       <div class="hub-brand"><img src="/img/logos/logo_k_starry.png" alt=""><div><b>Kyoto Hub</b><small id="hubOnline">Every Kyoto player</small></div></div>
       <button class="hr on" data-ht="chat">__I_chat__<span>Chat</span></button>
       <button class="hr" data-ht="dms">__I_users__<span>DMs</span><i class="dot" id="dmDot" hidden></i></button>
+      <button class="hr" data-ht="rooms">__I_film__<span>Live Rooms</span><i class="dot live" id="roomDot" hidden></i></button>
+      <button class="hr" data-ht="voice">__I_mic__<span>Voice Rooms</span><i class="dot live" id="voiceDot" hidden></i></button>
+      <div class="hr-sep"></div>
+      <button class="hr" data-ht="lfg">__I_team__<span>Looking For Group</span></button>
+      <button class="hr" data-ht="servers">__I_server__<span>Server Reviews</span></button>
+      <button class="hr" data-ht="trades">__I_swap__<span>Trades</span><i class="dot" id="tradeDot" hidden></i></button>
       <button class="hr" data-ht="mods" id="hrMods" hidden>__I_shield__<span>Mods</span><i class="dot" id="modDot" hidden></i></button>
       <div class="hub-threads" id="hubThreads" hidden></div>
+      <div class="vcbar" id="vcbar" hidden></div>
       <div class="hub-me" id="hubMe"></div>
     </aside>
     <section class="hub-main">
       <header class="hub-top"><div><h2 id="hubTitle"># chat</h2><small id="hubSub">Talk with every Kyoto player, in game, here and on Discord.</small></div><div class="hub-top-r" id="hubTopR"></div></header>
+      <div class="pinbar" id="pinBar" hidden></div>
       <div class="hub-feed" id="hubFeed"></div>
+      <div class="hub-view" id="hubView" hidden></div>
+      <div class="rooms" id="roomsView" hidden>
+        <div class="rlist" id="rList"></div>
+        <div class="room" id="rRoom" hidden>
+          <div class="rstage">
+            <div class="rplayer"><div id="ytPlayer"></div><div class="rcover" id="rCover"><button class="btn glow" id="rStart">__I_play__ Join the watch party</button><small>Your browser needs one click before it can play sound.</small></div><div class="rempty" id="rEmpty" hidden></div></div>
+            <div class="rbar"><button class="rctl" id="rPlay" title="Play / pause">__I_play__</button><button class="rctl sm" id="rBack" title="Back 10 s">-10</button><button class="rctl sm" id="rFwd" title="Forward 10 s">+10</button>
+              <div class="rseek" id="rSeek"><i id="rProg"></i></div><span class="rtime" id="rTime">0:00</span><button class="rctl sm" id="rSkip" title="Next in queue">Skip</button>
+              <input type="range" id="rVol" min="0" max="100" value="80" title="Volume"></div>
+            <div class="rnow"><b id="rTitle">Nothing playing</b><small id="rBy"></small></div>
+            <form class="radd" id="rAdd"><input id="rUrl" placeholder="Paste a YouTube link"><button class="btn sm" data-ra="load" type="submit">Play now</button><button class="btn sm ghost" data-ra="queue" type="button">Add to queue</button></form>
+            <div class="rqueue" id="rQueue"></div>
+          </div>
+          <div class="rside">
+            <div class="rhead"><div><b id="rName">Room</b><small id="rMeta"></small></div><button class="btn sm ghost" id="rLeave">Leave</button></div>
+            <div class="rmembers" id="rMembers"></div>
+            <div class="rchat" id="rChat"></div>
+            <form class="rsay" id="rSay"><input id="rMsg" maxlength="200" placeholder="Say something" autocomplete="off"><button class="btn sm">Send</button></form>
+          </div>
+        </div>
+      </div>
       <form class="hub-compose" id="hubCompose" autocomplete="off">
-        <label class="hc-attach" title="Send a picture">__I_image__<input type="file" id="hubFile" accept="image/png,image/jpeg,image/gif,image/webp" hidden></label>
-        <div class="hc-box"><div class="hc-preview" id="hubPreview" hidden></div><input id="hubInput" maxlength="300" placeholder="Message #chat"></div>
-        <button class="hc-send" title="Send">__I_arrow__</button>
+        <div class="hc-reply" id="hubReply" hidden></div>
+        <div class="hc-row">
+          <label class="hc-attach" title="Send a picture">__I_image__<input type="file" id="hubFile" accept="image/png,image/jpeg,image/gif,image/webp" hidden></label>
+          <div class="hc-box"><div class="hc-preview" id="hubPreview" hidden></div><input id="hubInput" maxlength="300" placeholder="Message #chat"></div>
+          <button type="button" class="hc-attach" id="hubStk" title="Stickers">__I_smile__</button>
+          <button type="button" class="hc-attach" id="hubPoll" title="Make a poll">__I_poll__</button>
+          <button class="hc-send" title="Send">__I_arrow__</button>
+        </div>
+        <div class="stkpop" id="stkPop" hidden></div>
       </form>
       <div class="hub-login" id="hubLogin" hidden><h3>Log in to chat</h3><p>Type <code>/kyoto link</code> in game to get a code, then log in. You stay logged in on this device.</p><a class="btn glow" href="/edit" data-link>Log in</a></div>
     </section>
@@ -266,10 +301,16 @@
     <article><i>__I_box__</i><h3>Voxel cosmetics</h3><p>Hats, wings, backpacks and more. They follow your head, swing with your arms and legs, and other Kyoto players see them.</p></article>
     <article><i>__I_cape__</i><h3>GIF to cape</h3><p>Drop any PNG or GIF and it's fitted to the cape shape. GIFs become animated capes.</p></article>
     <article><i>__I_share__</i><h3>Wear it or sell it</h3><p>Wear it in one click, or post it to the Store with photos taken for you. Free, or for coins.</p></article>
+      <article><i>__I_film__</i><h3>Build timelapses</h3><p>Record a build in game with the Build Recorder, then watch it come together block by block from any angle. <a href="/build">Open one</a>.</p></article>
+    <article><i>__I_box__</i><h3>Litematica schematics</h3><p>Turn any recording into a real .litematic (or WorldEdit .schem) with a full list of materials, then paste it anywhere.</p></article>
+    <article><i>__I_download__</i><h3>A real app</h3><p>Projects save by themselves, double-click .kycos and .kybuild files to open them, and record timelapse videos for TikTok.</p></article>
   </section>
 </main>
 
 <!-- shared footer (home, news, store, download, studio) -->
+<!-- ======================= COMMUNITY ======================= -->
+<main id="page-community" class="page subpage commpage" hidden><div id="commRoot"></div></main>
+
 <div id="siteFoot">
 <section class="cta">
     <img class="logo-k" src="/img/logos/logo_k_starry.png" alt="">
@@ -280,7 +321,7 @@
     <div class="soc" id="footSoc"></div>
     <div class="f-row"><a class="brand" href="/" data-link><img class="logo-k" src="/img/logos/logo_k_starry.png" alt=""><span>KYOTO</span></a>
       <span class="f-copy">© <span id="year"></span> Kyoto Client</span>
-      <a href="/edit" data-link>Profile editor</a><a href="/download" data-link>Download</a><a href="/news" data-link>News</a><a href="/store" data-link>Cosmetics</a><a href="/hub" data-link>Hub</a><a href="/studio" data-link>Kyoto Studio</a><a href="/download#faq" data-link>Support</a><a id="footDiscord" href="#" target="_blank" rel="noopener">Discord</a>
+      <a href="/edit" data-link>Profile editor</a><a href="/download" data-link>Download</a><a href="/news" data-link>News</a><a href="/store" data-link>Cosmetics</a><a href="/hub" data-link>Hub</a><a href="/studio" data-link>Kyoto Studio</a><a href="/creators" data-link>Creators</a><a href="/leaderboards" data-link>Leaderboards</a><a href="/status" data-link>Status</a><a href="/download#faq" data-link>Support</a><a id="footDiscord" href="#" target="_blank" rel="noopener">Discord</a>
       <button class="theme-pill" id="themePill"></button>
       <span class="f-legal">Not affiliated with Mojang or Microsoft.</span></div>
   </footer>
@@ -310,6 +351,7 @@
         <button data-tab="links">__I_link__ Links</button>
         <button data-tab="media">__I_image__ Media</button>
         <button data-tab="effects">__I_wand__ Effects</button>
+        <button data-tab="room">__I_home__ Theme + room</button>
       </nav>
       <div class="side-foot">
         <a class="btn ghost wide" id="viewProfile" target="_blank">__I_external__ View profile</a>
@@ -358,6 +400,14 @@
           <div class="card up" data-kind="audio"><h4>__I_music__ Music</h4><p class="muted small">MP3, WAV or OGG, 10 MB. Plays when someone opens your profile.</p><div class="up-prev" id="pv_audio"></div>
             <div class="up-btns"><label class="btn">__I_upload__ Upload<input type="file" accept=".mp3,.wav,.ogg" hidden></label><button class="btn ghost" data-remove>__I_trash__</button></div></div>
         </div>
+      </div>
+
+      <div class="tab" data-tab="room">
+        <h2>Theme + room</h2><p class="muted">One-click looks, and a little 3D room with you standing in it.</p>
+        <div class="card"><h4>__I_palette__ Theme</h4><p class="muted small">Sets colours, font, card and background effect. Tweak anything after.</p><div class="thgrid" id="themeGrid"></div></div>
+        <div class="card"><h4>__I_home__ Profile room</h4><p class="muted small">Shows next to your card. Uses your Kyoto skin (or your Minecraft one).</p><div class="thgrid rooms" id="roomGrid"></div>
+          <div class="row2" id="roomOpts" hidden><label>Pose<select id="f_roomPose"><option value="wave">Waving</option><option value="stand">Standing</option><option value="sit">Sitting</option></select></label>
+          <label>Lighting<select id="f_roomTime"><option value="night">Cozy night</option><option value="day">Daytime</option></select></label></div></div>
       </div>
 
       <div class="tab" data-tab="effects">
@@ -428,10 +478,12 @@
 <main id="page-user" class="page" hidden><div class="profile-root full" id="userRoot"></div></main>
 
 <div id="toasts"></div>
-<script src="/assets/icons.js?v=12"></script>
-<script src="/assets/site.js?v=15"></script>
+<script src="/assets/icons.js?v=14"></script>
+<script src="/assets/room.js?v=1"></script>
+<script src="/assets/site.js?v=18"></script>
 <script src="/assets/home.js?v=2"></script>
-<script src="/assets/pages.js?v=2"></script>
-<script src="/assets/hub.js?v=2"></script>
+<script src="/assets/pages.js?v=6"></script>
+<script src="/assets/hub.js?v=4"></script>
+<script src="/assets/community.js?v=1"></script>
 </body>
 </html>

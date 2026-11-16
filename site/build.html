@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Build Timelapse - Kyoto Studio</title>
+<meta name="description" content="Watch a timelapse of your Minecraft build recorded with Kyoto Client, see every material, and export a Litematica schematic.">
+<link rel="icon" href="/img/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/build.css?v=1">
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <a class="logo" href="/studio" id="logoLink"><img src="/img/logos/logo_k_starry.png" alt=""><b>Kyoto</b><span>Studio</span></a>
+    <button class="tb" id="homeBtn" hidden>← Home</button>
+    <span class="crumb">Build Timelapse</span>
+    <div class="title" id="bTitle">Open a build</div>
+    <div class="topright">
+      <label class="tb file">Open .kybuild<input type="file" id="fileIn" accept=".kybuild,.json,.gz" hidden></label>
+      <button class="tb" id="shotBtn" disabled>Screenshot</button>
+      <button class="tb" id="videoBtn" disabled>Record video</button>
+      <button class="pri" id="exportBtn" disabled>Export schematic</button>
+    </div>
+  </header>
+
+  <main class="view" id="view">
+    <canvas id="gl"></canvas>
+    <div class="drop" id="drop">
+      <div class="dcard">
+        <div class="dicon"><svg viewBox="0 0 24 24"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M12 12 20 7.5M12 12 4 7.5M12 12v9"/></svg></div>
+        <h1>Watch your build come together</h1>
+        <p>Record a build in Minecraft with Kyoto Client (<b>Right Shift → Tools → Build Recorder</b>, or <code>/kyoto build start</code>), then drop the <b>.kybuild</b> file here.</p>
+        <label class="pri big">Choose a .kybuild file<input type="file" id="fileIn2" accept=".kybuild,.json,.gz" hidden></label>
+        <button class="ghost" id="demoBtn">Try a demo build</button>
+        <div class="recent" id="recent"></div>
+        <ol class="how"><li><b>Watch</b> the timelapse from any angle, at any speed.</li><li><b>Count</b> every block you used.</li><li><b>Export</b> a Litematica schematic (.litematic) or WorldEdit (.schem).</li></ol>
+      </div>
+    </div>
+    <div class="hint" id="hover" hidden></div>
+    <div class="vbtns" id="vbtns" hidden>
+      <button data-cam="orbit" class="on" title="Spin around with the mouse">Orbit</button><button data-cam="cinematic" title="Slowly circles the build">Cinematic</button><button data-cam="follow" title="Watch over your shoulder">Builder cam</button><button data-cam="top" title="From above">Top</button><button data-cam="frame" title="Fit the build">Frame</button>
+    </div>
+    <div class="recdot" id="recdot" hidden>● Recording video</div>
+  </main>
+
+  <aside class="side" id="side">
+    <section class="card" id="infoCard">
+      <h3>Build</h3>
+      <div class="kv" id="info"><span>Nothing open yet.</span></div>
+    </section>
+    <section class="card">
+      <h3>View</h3>
+      <label class="row"><span>Show what was already there</span><input type="checkbox" id="optTerrain" checked><i class="sw"></i></label>
+      <label class="row"><span>Show the builder</span><input type="checkbox" id="optPlayer" checked><i class="sw"></i></label>
+      <label class="row"><span>Block pop animation</span><input type="checkbox" id="optPop" checked><i class="sw"></i></label>
+      <label class="row"><span>Ground grid</span><input type="checkbox" id="optGrid" checked><i class="sw"></i></label>
+      <div class="slice"><span>Layers</span><input type="range" id="slice" min="0" max="1" value="1"><b id="sliceLbl">All</b></div>
+      <div class="seg" id="skySeg"><button data-sky="day" class="on">Day</button><button data-sky="sunset">Sunset</button><button data-sky="night">Night</button></div>
+    </section>
+    <section class="card grow">
+      <h3>Materials <small id="matCount"></small></h3>
+      <div class="mats" id="mats"><p class="muted">Every block in the build, counted. Click one to highlight it.</p></div>
+    </section>
+  </aside>
+
+  <footer class="timeline" id="timeline">
+    <button class="play" id="playBtn" title="Play / pause (Space)" disabled><svg viewBox="0 0 24 24" id="playIco"><path d="M7 5v14l12-7z"/></svg></button>
+    <div class="tl">
+      <canvas id="hist"></canvas>
+      <input type="range" id="scrub" min="0" max="1000" value="0" step="1" disabled>
+      <div class="times"><span id="tNow">0:00</span><span id="tEnd">0:00</span></div>
+    </div>
+    <div class="speed">
+      <select id="speed" title="Playback speed">
+        <option value="fit15">Fit in 15 s</option><option value="fit30" selected>Fit in 30 s</option><option value="fit60">Fit in 1 min</option>
+        <option value="1">1×</option><option value="4">4×</option><option value="16">16×</option><option value="64">64×</option><option value="256">256×</option>
+      </select>
+      <label class="loop"><input type="checkbox" id="loop" checked><span>Loop</span></label>
+    </div>
+    <div class="count"><b id="cNow">0</b><span>changes</span></div>
+  </footer>
+</div>
+
+<div id="modal" hidden><div class="mcard"><button class="mx" data-close>✕</button><div id="mbody"></div></div></div>
+<div id="toasts"></div>
+<script>window.KS_HOOKS = window.KS_HOOKS || {};</script>
+<script src="/assets/nbt.js?v=1"></script>
+<script src="/assets/build.js?v=2"></script>
+</body>
+</html>

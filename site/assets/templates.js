@@ -9,7 +9,7 @@
   // Coordinates are skin pixels from the slot's pivot (head: neck, back: top of the body, arm: shoulder).
   // The head is x -4..3, y 0..7, z -4..3 (+z = face). The body's back is at z -3.
   const T = [];
-  const tpl = (name, slot, desc, build) => T.push({ name, slot, desc, build });
+  const tpl = (name, slot, desc, build, x5, anim) => T.push({ name, slot, desc, build, anim });
   tpl('Crown', 'head', 'A gold crown with jewels', set => {
     for (let x = -5; x <= 4; x++) for (let z = -5; z <= 4; z++) {
       if (x !== -5 && x !== 4 && z !== -5 && z !== 4) continue;
@@ -60,6 +60,15 @@
   tpl('Gold Bracelet', 'arm', 'A bracelet on both wrists (turn on Both sides)', set => {
     for (let x = -4; x <= 1; x++) for (let z = -3; z <= 2; z++) if (x === -4 || x === 1 || z === -3 || z === 2) set(x, -8, z, '#ffd34a');
   }, true);
+  // animated starters (Animate tab): parts + keyframes
+  tpl('Flapping Wings', 'back', 'Animated: both wings flap', set => wings(set, '#f6f3ff', '#c9b8ff'), false,
+    { len: 1.2, groups: [{ name: 'Wings', pivot: [0, -4, -4], mirror: true, ease: 'smooth', keys: [{ t: 0, r: [0, -12, 0], p: [0, 0, 0], s: 1 }, { t: .6, r: [0, 32, 0], p: [0, .5, 0], s: 1 }] }] });
+  tpl('Spinning Halo', 'head', 'Animated: floats and spins', set => {
+    for (let a = 0; a < 40; a++) { const t = a / 40 * Math.PI * 2, x = Math.round(Math.cos(t) * 4.6 - .5), z = Math.round(Math.sin(t) * 4.6 - .5); set(x, 10, z, a % 5 ? '#ffe58a' : '#fff6cf'); }
+  }, false, { len: 4, groups: [{ name: 'Halo', pivot: [0, 10.5, 0], mirror: false, ease: 'linear', keys: [{ t: 0, r: [0, 0, 0], p: [0, 0, 0], s: 1 }, { t: 1, r: [0, 90, 0], p: [0, .8, 0], s: 1 }, { t: 2, r: [0, 180, 0], p: [0, 0, 0], s: 1 }, { t: 3, r: [0, 270, 0], p: [0, .8, 0], s: 1 }, { t: 4, r: [0, 360, 0], p: [0, 0, 0], s: 1 }] }] });
+  tpl('Wagging Tail', 'back', 'Animated: a fox tail that wags', set => {
+    for (let i = 0; i < 9; i++) { const y = -12 + Math.round(i * .7), z = -3 - Math.round(i * .5); for (let x = -1; x <= 0; x++) for (let dy = 0; dy < 2 + (i > 2 && i < 7 ? 1 : 0); dy++) set(x, y + dy, z, i > 6 ? '#ffffff' : '#ff8a3d'); }
+  }, false, { len: .9, groups: [{ name: 'Tail', pivot: [0, -11, -3], mirror: false, ease: 'smooth', keys: [{ t: 0, r: [0, -22, 0], p: [0, 0, 0], s: 1 }, { t: .45, r: [0, 22, 0], p: [0, 0, 0], s: 1 }] }] });
   function wings(set, a, b) {
     for (const m of [1, -1]) for (let i = 0; i <= 8; i++) {
       const x = m > 0 ? 3 + i : -4 - i;
@@ -75,8 +84,10 @@
       if (g.every((v, i) => v >= 0 && v < d.n[i])) vox.set(g.join(','), c);
     });
     const pal = [...new Set(vox.values())];
-    return { format: 'kycos', version: 1, name: t.name, slot: t.slot, kind: 'voxel', mirror: t.slot === 'arm', grid: { n: d.n.slice(), vs: 1, center: d.center.slice() }, palette: pal,
+    const out = { format: 'kycos', version: 1, name: t.name, slot: t.slot, kind: 'voxel', mirror: t.slot === 'arm', grid: { n: d.n.slice(), vs: 1, center: d.center.slice() }, palette: pal,
       voxels: [...vox].map(([k, c]) => [...k.split(',').map(Number), pal.indexOf(c)]) };
+    if (t.anim) out.anim = JSON.parse(JSON.stringify(Object.assign({ loop: true }, t.anim)));
+    return out;
   }
   /** Small isometric picture of a voxel build (template cards, Store). */
   function iso(canvas, d) {

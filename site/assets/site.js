@@ -15,8 +15,9 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 document.body.innerHTML = document.body.innerHTML.replace(/__I_(\w+)__/g, (m, n) => icon(n));
 
 function toast(title, text = '', kind = '') {
-  const el = document.createElement('div'); el.className = 'toast ' + kind;
+  const el = document.createElement('div'); el.className = 'toast ' + (typeof kind === 'string' ? kind : 'click');
   el.innerHTML = `<b>${esc(title)}</b><span>${esc(text)}</span>`; $('#toasts').appendChild(el);
+  if (typeof kind === 'function') el.onclick = () => { kind(); el.remove(); };
   setTimeout(() => { el.style.transition = 'opacity .4s, transform .4s'; el.style.opacity = 0; el.style.transform = 'translateY(8px)'; }, 3800);
   setTimeout(() => el.remove(), 4300);
 }
@@ -117,12 +118,15 @@ function route() {
   const p = location.pathname;
   const user = /^\/u\/([A-Za-z0-9_]{1,16})\/?$/.exec(p) || (new URLSearchParams(location.search).get('u') ? [0, new URLSearchParams(location.search).get('u')] : null);
   const edit = p.startsWith('/edit'), mod = p.startsWith('/mod');
-  const sub = /^\/(news|changelog|store|cosmetics|download|studio|hub)(\/|$)/.exec(p);
-  const page = sub ? ({ changelog: 'news', cosmetics: 'store' }[sub[1]] || sub[1]) : null;
-  $('#page-home').hidden = !!user || edit || mod || !!page;
+  const sub = /^\/(news|changelog|store|cosmetics|download|studio|hub|rooms)(\/|$)/.exec(p);
+  const comm = /^\/(creators|creator|leaderboards|achievements|skins|wishlist|invite|status|card)(\/|$)/.test(p);
+  const page = sub ? ({ changelog: 'news', cosmetics: 'store', rooms: 'hub' }[sub[1]] || sub[1]) : null;
+  $('#page-home').hidden = !!user || edit || mod || !!page || comm;
+  $('#page-community').hidden = !comm;
+  if (comm) { document.title = 'Kyoto Community'; if (window.openCommunity) window.openCommunity(p); }
   for (const n of ['news', 'store', 'download', 'studio', 'hub']) { const el = $('#page-' + n); if (el) el.hidden = page !== n; }
   const foot = $('#siteFoot'); if (foot) foot.hidden = !!user || edit || mod || page === 'hub';
-  document.title = { news: sub && sub[1] === 'changelog' ? 'Changelog - Kyoto Client' : 'News - Kyoto Client', store: 'Cosmetics - Kyoto Client', hub: 'Kyoto Hub', download: 'Download Kyoto Client', studio: 'Kyoto Studio' }[page] || 'Kyoto Client · The best client is just a mod';
+  document.title = { news: sub && sub[1] === 'changelog' ? 'Changelog - Kyoto Client' : 'News - Kyoto Client', store: 'Cosmetics - Kyoto Client', hub: sub && sub[1] === 'rooms' ? 'Live Rooms - Kyoto' : 'Kyoto Hub', download: 'Download Kyoto Client', studio: 'Kyoto Studio' }[page] || 'Kyoto Client · The best client is just a mod';
   if (page && window.openPage) window.openPage(page, p);
   $('#page-edit').hidden = !edit;
   $('#page-mod').hidden = !mod;
@@ -216,15 +220,38 @@ api('/mods/list', { auth: false }).then(r => {
 /* ===================== profile renderer (public page, editor preview, landing mini) ===================== */
 const FONTS = { poppins: "'Poppins', sans-serif", inter: "'Inter', sans-serif", mono: "'JetBrains Mono', monospace", serif: "'Playfair Display', serif", pixel: "'Silkscreen', monospace" };
 const CARDS = ['glass', 'solid', 'outline', 'none'];
+/* profile themes: one click sets colours, font, card and background effect together */
+const PTHEMES = {
+  sakura: { n: 'Sakura', accent: '#ff8fb8', textColor: '#fff4f8', font: 'poppins', bgEffect: 3, nameEffect: 1, cardStyle: 0, g: ['#3a1a2a', '#7a3a58', '#ffb7d5'] },
+  midnight: { n: 'Midnight', accent: '#6b8bff', textColor: '#e8ecff', font: 'inter', bgEffect: 6, nameEffect: 1, cardStyle: 0, g: ['#05060f', '#141a3a', '#2a3a7a'] },
+  neon: { n: 'Neon', accent: '#39ffb0', textColor: '#eafff6', font: 'mono', bgEffect: 5, nameEffect: 2, cardStyle: 2, g: ['#05010d', '#1a0533', '#00ffa3'] },
+  ocean: { n: 'Ocean', accent: '#4ad8ff', textColor: '#eafaff', font: 'poppins', bgEffect: 4, nameEffect: 3, cardStyle: 0, g: ['#021526', '#063a5c', '#1fa3c7'] },
+  forest: { n: 'Forest', accent: '#7ee2a0', textColor: '#f0fff4', font: 'serif', bgEffect: 5, nameEffect: 1, cardStyle: 0, g: ['#07140c', '#16351f', '#3f7a4a'] },
+  sunset: { n: 'Sunset', accent: '#ff9a4d', textColor: '#fff6ec', font: 'poppins', bgEffect: 1, nameEffect: 1, cardStyle: 0, g: ['#2a0f2e', '#a3345a', '#ffae5a'] },
+  mono: { n: 'Mono', accent: '#e8eaf0', textColor: '#ffffff', font: 'inter', bgEffect: 0, nameEffect: 0, cardStyle: 1, g: ['#0b0b0d', '#18181c', '#2a2a30'] },
+  candy: { n: 'Candy', accent: '#ff7ad9', textColor: '#ffffff', font: 'pixel', bgEffect: 1, nameEffect: 2, cardStyle: 0, g: ['#2a0f3a', '#6a2a8a', '#ff9ad0'] },
+  aurora: { n: 'Aurora', accent: '#7affd8', textColor: '#f0fffb', font: 'poppins', bgEffect: 6, nameEffect: 3, cardStyle: 0, g: ['#020a14', '#0a3a4a', '#5affb8'] },
+  ember: { n: 'Ember', accent: '#ff5d3a', textColor: '#fff1ea', font: 'inter', bgEffect: 5, nameEffect: 1, cardStyle: 1, g: ['#120302', '#3a0d06', '#a32a10'] },
+  retro: { n: 'Retro', accent: '#ffd36b', textColor: '#fff8e6', font: 'pixel', bgEffect: 1, nameEffect: 4, cardStyle: 2, g: ['#1a0f2e', '#3a1f5c', '#ff5d9e'] },
+  frost: { n: 'Frost', accent: '#bfe3ff', textColor: '#ffffff', font: 'poppins', bgEffect: 2, nameEffect: 1, cardStyle: 0, g: ['#0a1422', '#1c3550', '#9ccfff'] }
+};
+const ROOM_NAMES = { christmas: 'Christmas', bedroom: 'Bedroom', garden: 'Garden', beach: 'Beach', space: 'Space station', halloween: 'Halloween', gamer: 'Gamer den', cafe: 'Cafe' };
+async function skinFor(p) {
+  const url = CONFIG.api + (p.skinUrl || `/mcskin?name=${encodeURIComponent(p.name || 'Steve')}`);
+  try { const r = await fetch(url); if (!r.ok) throw 0; const slim = p.slim || r.headers.get('X-Skin-Slim') === '1'; return { url: URL.createObjectURL(await r.blob()), slim }; }
+  catch (e) { return { url: '/img/skins/steve.png', slim: false }; }
+}
 function renderProfile(root, p, opts = {}) {
   root.querySelectorAll('canvas').forEach(c => c._stop && c._stop());
+  if (root._room) { root._room.stop(); root._room = null; }
+  const th = PTHEMES[p.theme];
   const accent = p.accent || `hsl(${p.hue ?? 262} 70% 65%)`;
   root.style.setProperty('--pa', accent); root.style.setProperty('--pt', p.textColor || '#ffffff');
   root.style.setProperty('--pf', FONTS[p.font] || FONTS.poppins); root.style.setProperty('--po', (p.cardOpacity ?? 62) / 100);
   const layout = ['card', 'floating', 'compact'][p.layout || 0];
   const card = layout === 'floating' ? 'floating' : CARDS[p.cardStyle || 0];
   const media = opts.media || {};
-  let bg = '';
+  let bg = th ? `<div class="pr-theme" style="background:radial-gradient(120% 90% at 50% 110%, ${th.g[2]}55, transparent 60%),linear-gradient(160deg, ${th.g[0]}, ${th.g[1]})"></div>` : '';
   if (media.video) bg = `<video src="${esc(media.video)}" autoplay muted loop playsinline></video>`;
   else if (media.image) bg = `<img src="${esc(media.image)}" alt="">`;
   const owner = (p.badges || []).includes('owner');
@@ -234,13 +261,17 @@ function renderProfile(root, p, opts = {}) {
   const avatar = media.avatar || `https://mc-heads.net/avatar/${encodeURIComponent(p.name || 'MHF_Steve')}/128`;
   const badges = [owner ? `<span class="owner">${icon('crown')}Owner of Kyoto Client</span>` : '', `<span>${icon('sparkles')}Kyoto</span>`, ...(p.tags || []).map(t => `<span>${esc(t)}</span>`)].join('');
   const links = (p.links || []).map(l => { const href = /^https?:/.test(l) ? l : 'https://' + l; const li = linkInfo(href); return opts.noLinks ? `<a title="${esc(li.name)}" aria-disabled="true">${icon(li.icon)}</a>` : `<a href="${esc(href)}" target="_blank" rel="noopener" title="${esc(li.name)}">${icon(li.icon)}</a>`; }).join('');
-  root.innerHTML = `<div class="pr-bg">${bg}</div><div class="pr-dim" style="opacity:${bg ? (p.bgDim ?? 45) / 100 : 0}"></div><canvas class="pr-fx"></canvas>
+  const hasRoom = p.room && p.room.scene && p.room.on !== false && !opts.static;
+  root.classList.toggle('has-room', !!hasRoom);
+  root.innerHTML = `<div class="pr-bg">${bg}</div><div class="pr-dim" style="opacity:${bg && (media.video || media.image) ? (p.bgDim ?? 45) / 100 : 0}"></div><canvas class="pr-fx"></canvas>
+    ${hasRoom ? `<div class="pr-room"><canvas></canvas><span>${icon('home')} ${esc(ROOM_NAMES[p.room.scene] || 'Room')}<small>drag to look around</small></span></div>` : ''}
     ${opts.back ? `<a class="btn ghost sm pr-back" href="/" data-link>${icon('arrow')} Kyoto</a>` : ''}
     <div class="pr-card ${card} ${layout === 'compact' ? 'compact' : ''}">
       <div class="pr-av ${p.avatarGlow !== false ? 'glow' : ''}">${owner ? `<span class="pr-crown">${icon('crown')}</span>` : ''}<img src="${esc(avatar)}" alt=""></div>
       <h1 class="pr-name ${nameFx}">${letters}</h1>
       <div class="pr-meta"><span>@${esc(p.name || '')}</span>${p.location ? `<span>${icon('pin')}${esc(p.location)}</span>` : ''}</div>
       <div class="pr-badges">${badges}</div>
+      ${p.level ? `<div class="pr-lvl"><a href="/card/${encodeURIComponent(p.name)}" data-link>${icon('idcard')} Level ${p.level}</a><a href="/achievements/${encodeURIComponent(p.name)}" data-link>${icon('trophy')} ${p.achievements || 0} achievements</a>${p.followers ? `<a href="/creator/${encodeURIComponent(p.name)}" data-link>${icon('users')} ${p.followers} followers</a>` : ''}</div>` : ''}
       <p class="pr-bio"></p>
       <div class="pr-links">${links}${p.discordName ? `<span class="pr-discord" title="Discord (verified)">${icon('discord')}${esc(p.discordName)}</span>` : ''}</div>
     </div>
@@ -252,6 +283,7 @@ function renderProfile(root, p, opts = {}) {
   else bioEl.textContent = bio;
   if (nameFx === 'typewriter' && !opts.static) { const h = root.querySelector('.pr-name'); let i = 0; const t = () => { if (!root.contains(h)) return; h.textContent = name.slice(0, ++i); if (i < name.length) setTimeout(t, 90); }; t(); }
   effects(root.querySelector('.pr-fx'), p.bgEffect ?? 1, accent);
+  if (hasRoom && window.KY_ROOM) { const cv = root.querySelector('.pr-room canvas'); const key = ++renderProfile.n; skinFor(p).then(sk => { if (key !== renderProfile.n || !cv.isConnected) return; root._room = window.KY_ROOM(cv, p.room, sk.url, sk.slim); }); }
   if (media.audio) {
     const audio = new Audio(media.audio); audio.loop = true; audio.volume = .6; root._audio = audio;
     const bar = root.querySelector('.pr-music'), btn = bar.querySelector('button');
@@ -261,6 +293,7 @@ function renderProfile(root, p, opts = {}) {
   }
   return root;
 }
+renderProfile.n = 0;
 function effects(c, type, accent) {
   if (!c || !type) return;
   const g = c.getContext('2d'); let W, H, run = true, parts = [], shoot = null;
@@ -325,8 +358,8 @@ function cursorTrail(root, color) {
 
 /* ===================== editor /edit ===================== */
 let ME = null, P = {}, SAVED = '', MEDIA = {};
-const FIELDS = ['displayName', 'bio', 'location', 'tags', 'links', 'accent', 'textColor', 'layout', 'cardStyle', 'cardOpacity', 'bgDim', 'font', 'showViews', 'avatarGlow', 'nameEffect', 'bgEffect', 'cursorTrail', 'typewriterBio'];
-const DEF = { displayName: '', bio: '', location: '', tags: [], links: [], accent: '#a855f7', textColor: '#ffffff', layout: 0, cardStyle: 0, cardOpacity: 62, bgDim: 45, font: 'poppins', showViews: true, avatarGlow: true, nameEffect: 1, bgEffect: 1, cursorTrail: false, typewriterBio: false };
+const FIELDS = ['displayName', 'bio', 'location', 'tags', 'links', 'accent', 'textColor', 'layout', 'cardStyle', 'cardOpacity', 'bgDim', 'font', 'showViews', 'avatarGlow', 'nameEffect', 'bgEffect', 'cursorTrail', 'typewriterBio', 'theme', 'room'];
+const DEF = { displayName: '', bio: '', location: '', tags: [], links: [], accent: '#a855f7', textColor: '#ffffff', layout: 0, cardStyle: 0, cardOpacity: 62, bgDim: 45, font: 'poppins', showViews: true, avatarGlow: true, nameEffect: 1, bgEffect: 1, cursorTrail: false, typewriterBio: false, theme: null, room: null };
 
 async function openEditor() {
   const q = new URLSearchParams(location.search);
@@ -396,7 +429,23 @@ function bindForm() {
   choices('#c_bgEffect', ['None', 'Stars', 'Snow', 'Sakura', 'Rain', 'Fireflies', 'Shooting stars'], 'bgEffect');
   $('#swatches').innerHTML = ['#a855f7', '#ff5d7a', '#ff9a4d', '#ffd36b', '#7ee2a0', '#5cc8ff', '#6b8bff', '#e8eaf0', '#ffb7d5'].map(c => `<button style="background:${c}" data-c="${c}" title="${c}"></button>`).join('');
   $$('#swatches button').forEach(b => b.onclick = () => { P.accent = b.dataset.c; v('accent').value = P.accent; $('#cv_accent').textContent = P.accent; refresh(); });
-  renderTags(); renderLinks();
+  renderTags(); renderLinks(); renderRoomTab();
+}
+function renderRoomTab() {
+  const tg = $('#themeGrid'), rg = $('#roomGrid'); if (!tg) return;
+  tg.innerHTML = `<button class="thm ${!P.theme ? 'on' : ''}" data-th=""><i style="background:#1a1b22"></i><b>Custom</b></button>` + Object.entries(PTHEMES).map(([k, t]) => `<button class="thm ${P.theme === k ? 'on' : ''}" data-th="${k}"><i style="background:linear-gradient(140deg,${t.g[0]},${t.g[1]} 55%,${t.g[2]})"><em style="background:${t.accent}"></em></i><b>${t.n}</b></button>`).join('');
+  $$('[data-th]', tg).forEach(b => b.onclick = () => {
+    const k = b.dataset.th; P.theme = k || null;
+    if (k) { const t = PTHEMES[k]; for (const f of ['accent', 'textColor', 'font', 'bgEffect', 'nameEffect', 'cardStyle']) P[f] = t[f]; }
+    bindForm(); refresh();
+  });
+  const r = P.room || {};
+  rg.innerHTML = `<button class="thm ${!r.scene ? 'on' : ''}" data-rm=""><i class="rm-none">${icon('x')}</i><b>No room</b></button>` + Object.entries(ROOM_NAMES).map(([k, n]) => `<button class="thm ${r.scene === k ? 'on' : ''}" data-rm="${k}"><i style="background-image:url(/img/rooms/${k}.webp)"></i><b>${n}</b></button>`).join('');
+  $$('[data-rm]', rg).forEach(b => b.onclick = () => { const k = b.dataset.rm; P.room = k ? Object.assign({ pose: 'wave', time: 'night' }, P.room || {}, { scene: k, on: true }) : null; renderRoomTab(); refresh(); });
+  $('#roomOpts').hidden = !r.scene;
+  $('#f_roomPose').value = r.pose || 'wave'; $('#f_roomTime').value = r.time || 'night';
+  $('#f_roomPose').onchange = () => { P.room = Object.assign({}, P.room, { pose: $('#f_roomPose').value }); refresh(); };
+  $('#f_roomTime').onchange = () => { P.room = Object.assign({}, P.room, { time: $('#f_roomTime').value }); refresh(); };
 }
 function choices(sel, names, key, preview) {
   const box = $(sel);
@@ -462,7 +511,7 @@ async function logOut() {
     show(cached); // instant, then check with the server
     try {
       const me = await api('/me');
-      const keep = { name: me.name, uuid: me.uuid, plus: !!me.plus };
+      const keep = { name: me.name, uuid: me.uuid, plus: !!me.plus, staff: !!me.staff };
       localStorage.setItem('kyoto.me', JSON.stringify(keep)); show(keep);
     } catch (e) {
       if (e.status === 401) { localStorage.removeItem('kyoto.token'); localStorage.removeItem('kyoto.me'); show(null); }

@@ -65,12 +65,37 @@
   if (!gl) { document.body.innerHTML = '<p style="padding:40px">Your browser can\'t do WebGL, so the builder can\'t run here.</p>'; return; }
   const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
   const prog = gl.createProgram();
-  gl.attachShader(prog, sh(gl.VERTEX_SHADER, `attribute vec3 p; attribute vec2 uv; attribute vec4 c; uniform mat4 mvp; varying vec2 vu; varying vec4 vc;
-    void main(){ vu = uv; vc = c; gl_Position = mvp * vec4(p, 1.0); }`));
-  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `precision mediump float; uniform sampler2D t; uniform float cut; varying vec2 vu; varying vec4 vc;
-    void main(){ vec4 col = texture2D(t, vu) * vc; if (col.a < cut) discard; gl_FragColor = col; }`));
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, `attribute vec3 p; attribute vec2 uv; attribute vec4 c; uniform mat4 mvp; uniform mat4 mdl; varying vec2 vu; varying vec4 vc; varying vec3 wp;
+    void main(){ vu = uv; vc = c; wp = (mdl * vec4(p, 1.0)).xyz; gl_Position = mvp * vec4(p, 1.0); }`));
+  // lighting preview: a sky tint + ambient, and an optional point light (torch / glow) that falls off with distance
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `precision mediump float; uniform sampler2D t; uniform float cut; uniform float lit; uniform vec3 tint; uniform vec4 pl; uniform vec3 plc; uniform vec3 fogc; uniform float fog;
+    varying vec2 vu; varying vec4 vc; varying vec3 wp;
+    void main(){ vec4 col = texture2D(t, vu) * vc; if (col.a < cut) discard;
+      if (lit > 0.5) {
+        float d = pl.w > 0.0 ? max(0.0, 1.0 - distance(wp, pl.xyz) / pl.w) : 0.0;
+        vec3 l = tint + plc * d * d;
+        col.rgb = col.rgb * l;
+        col.rgb = mix(col.rgb, fogc, fog);
+      }
+      gl_FragColor = col; }`));
   gl.linkProgram(prog); gl.useProgram(prog);
-  const L = { p: gl.getAttribLocation(prog, 'p'), uv: gl.getAttribLocation(prog, 'uv'), c: gl.getAttribLocation(prog, 'c'), mvp: gl.getUniformLocation(prog, 'mvp'), cut: gl.getUniformLocation(prog, 'cut') };
+  const L = { p: gl.getAttribLocation(prog, 'p'), uv: gl.getAttribLocation(prog, 'uv'), c: gl.getAttribLocation(prog, 'c'), mvp: gl.getUniformLocation(prog, 'mvp'), cut: gl.getUniformLocation(prog, 'cut'),
+    mdl: gl.getUniformLocation(prog, 'mdl'), lit: gl.getUniformLocation(prog, 'lit'), tint: gl.getUniformLocation(prog, 'tint'), pl: gl.getUniformLocation(prog, 'pl'), plc: gl.getUniformLocation(prog, 'plc'), fogc: gl.getUniformLocation(prog, 'fogc'), fog: gl.getUniformLocation(prog, 'fog') };
+  const ID4 = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+  /** Lighting presets (Studio = flat, like the editor always looked). bg = background colour. */
+  const LIGHTS = {
+    studio: { name: 'Studio', tint: [1, 1, 1], bg: [.105, .105, .125], lit: 0 },
+    noon: { name: 'Noon', tint: [1.06, 1.03, .96], bg: [.47, .65, .95], fogc: [.6, .75, 1], fog: .04, lit: 1 },
+    sunset: { name: 'Sunset', tint: [1.08, .74, .55], bg: [.62, .33, .32], fogc: [.85, .45, .35], fog: .08, lit: 1 },
+    night: { name: 'Night', tint: [.32, .37, .58], bg: [.025, .035, .08], fogc: [.02, .03, .07], fog: .1, lit: 1 },
+    cave: { name: 'Cave + torch', tint: [.1, .1, .12], bg: [.015, .015, .02], torch: [1.25, .82, .45], radius: 30, lit: 1 },
+    nether: { name: 'Nether', tint: [.95, .52, .42], bg: [.24, .05, .04], fogc: [.35, .07, .04], fog: .14, torch: [.9, .35, .1], radius: 40, lit: 1 },
+    end: { name: 'The End', tint: [.78, .72, .95], bg: [.05, .035, .09], fogc: [.1, .05, .15], fog: .1, lit: 1 },
+    glow: { name: 'Showcase', tint: [.55, .5, .7], bg: [.06, .05, .1], torch: [.9, .75, 1.2], radius: 34, lit: 1 }
+  };
+  let light = LIGHTS[localStorage.getItem('kyoto.studio.light')] ? localStorage.getItem('kyoto.studio.light') : 'studio';
+  function setLight(k) { if (!LIGHTS[k]) return; light = k; try { localStorage.setItem('kyoto.studio.light', k); } catch (e) { /* */ } redraw(); }
+  let lightOn = true; // lines/overlays turn it off while they draw
   gl.enable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
   function texFrom(src, smooth = false) {
@@ -92,7 +117,7 @@
       for (const i of [0, 1, 2, 0, 2, 3]) this.v(p[i][0], p[i][1], p[i][2], uv[i][0], uv[i][1], c[0], c[1], c[2], c[3]);
     }
     line(a, b, c) { this.v(a[0], a[1], a[2], 0, 0, ...c); this.v(b[0], b[1], b[2], 0, 0, ...c); }
-    draw(mvp, tex, mode = this.mode || gl.TRIANGLES, cut = 0.02) {
+    draw(mvp, tex, mode = this.mode || gl.TRIANGLES, cut = 0.02, mdl = null) {
       if (this.dirty) { gl.bindBuffer(gl.ARRAY_BUFFER, this.buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.a), gl.DYNAMIC_DRAW); this.n = this.a.length / 9; this.dirty = false; }
       if (!this.n) return;
       gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
@@ -100,6 +125,7 @@
       gl.enableVertexAttribArray(L.uv); gl.vertexAttribPointer(L.uv, 2, gl.FLOAT, false, 36, 12);
       gl.enableVertexAttribArray(L.c); gl.vertexAttribPointer(L.c, 4, gl.FLOAT, false, 36, 20);
       gl.uniformMatrix4fv(L.mvp, false, mvp); gl.uniform1f(L.cut, cut);
+      gl.uniformMatrix4fv(L.mdl, false, mdl || ID4); gl.uniform1f(L.lit, mode === gl.TRIANGLES && lightOn && mdl ? LIGHTS[light].lit : 0);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex || white);
       gl.drawArrays(mode, 0, this.n);
     }
@@ -155,12 +181,44 @@
     if (slim !== undefined) setArms(slim ? 'slim' : 'wide');
     skinChanged();
   }
-  function skinChanged() {
+  /* ---------- skin layers: the skin is made of stacked 64x64 layers (visible, opacity, blend, alpha lock) ---------- */
+  let layerSeq = 1;
+  function mkLayer(name, src) {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    if (src) g.drawImage(src, 0, 0);
+    return { id: layerSeq++, uid: Math.random().toString(36).slice(2, 10), name: name || 'Layer', c, g, vis: true, op: 1, blend: 'source-over', lock: false };
+  }
+  const SL = { list: [], active: 0 };
+  let pg = null; // the layer you paint on
+  function activeLayer() { return SL.list[SL.active] || SL.list[0]; }
+  function useLayer(i) { SL.active = clamp(i, 0, SL.list.length - 1); pg = activeLayer().g; }
+  function composite() {
+    if (!SL.list.length) return;
+    sg.save(); sg.clearRect(0, 0, 64, 64);
+    for (const ly of SL.list) if (ly.vis && ly.op > 0) { sg.globalAlpha = ly.op; sg.globalCompositeOperation = ly.blend || 'source-over'; sg.drawImage(ly.c, 0, 0); }
+    sg.restore();
+  }
+  /** A skin loaded from outside (file, name, default) becomes a single "Base" layer. */
+  function resetLayers() { SL.list = [mkLayer('Base', skin)]; useLayer(0); }
+  function layersJson() { return { active: SL.active, list: SL.list.map(l => ({ id: l.id, uid: l.uid, name: l.name, vis: l.vis, op: l.op, blend: l.blend, lock: l.lock, png: l.c.toDataURL('image/png') })) }; }
+  function loadLayersJson(j) {
+    return new Promise(res => {
+      if (!j || !Array.isArray(j.list) || !j.list.length) return res(false);
+      let left = j.list.length; const out = j.list.map(x => Object.assign(mkLayer(x.name), { uid: x.uid || Math.random().toString(36).slice(2, 10), vis: x.vis !== false, op: x.op == null ? 1 : x.op, blend: x.blend || 'source-over', lock: !!x.lock }));
+      j.list.forEach((x, i) => { const im = new Image(); im.onload = im.onerror = () => { try { out[i].g.drawImage(im, 0, 0); } catch (e) { /* */ } if (--left === 0) { SL.list = out; useLayer(j.active || 0); composite(); skinChanged(true); res(true); } }; im.src = x.png; });
+    });
+  }
+  function saveLayers() { try { if (SL.list.length > 1 || SL.list[0].op !== 1 || !SL.list[0].vis) localStorage.setItem('kyoto.studio.layers', JSON.stringify(layersJson())); else localStorage.removeItem('kyoto.studio.layers'); } catch (e) { /* too big */ } }
+  function skinChanged(keepLayers) {
+    if (keepLayers !== true) resetLayers();
     if (skinTex) gl.deleteTexture(skinTex);
     skinTex = texFrom(skin);
     const p = $('#skinPrev').getContext('2d'); p.clearRect(0, 0, 64, 64); p.drawImage(skin, 0, 0);
     try { localStorage.setItem('kyoto.builder.skin', skin.toDataURL()); } catch (e) { /* full */ }
+    saveLayers();
     buildPlayer(); draw2d(); redraw();
+    if (HOOKS.onLayers) HOOKS.onLayers();
   }
 
   /* ===================================================== the player ===================================================== */
@@ -221,30 +279,74 @@
     vox: new Map(), // "x,y,z" -> "#rrggbb"
     color: '#ff8fc8', palette: PALETTE0.slice(),
     pic: null, picSize: [8, 8], picOff: [0, 4, -5], picRot: [0, 0, 0],
-    tool: 'place', symX: false
+    tool: 'place', symX: false,
+    anim: null,       // { len, loop, groups: [{ name, pivot:[x,y,z], mirror, ease, keys:[{ t, r:[x,y,z], p:[x,y,z], s }] }] }
+    part: new Map()   // "x,y,z" -> moving part index (voxels not listed are part 0)
   };
+  /* ---------- animation (keyframes): playback clock + pose maths (same maths as the mod) ---------- */
+  const AN = { playing: false, t: 0, at: 0, tint: false, sel: 0 };
+  const PART_COLS = ['#ff8fc8', '#6ee7b7', '#7cc4ff', '#ffd166', '#c39bff', '#ff9f6e', '#5eead4', '#f472b6'];
+  function animNow() { if (!S.anim) return 0; const t = AN.playing ? AN.t + (performance.now() - AN.at) / 1000 : AN.t; return t; }
+  const EASE = {
+    linear: k => k, smooth: k => k * k * (3 - 2 * k), step: k => k < 1 ? 0 : 1,
+    bounce: k => { const n = 7.5625, d = 2.75; let x = k; if (x < 1 / d) return n * x * x; if (x < 2 / d) { x -= 1.5 / d; return n * x * x + .75; } if (x < 2.5 / d) { x -= 2.25 / d; return n * x * x + .9375; } x -= 2.625 / d; return n * x * x + .984375; },
+    elastic: k => k === 0 || k === 1 ? k : Math.pow(2, -10 * k) * Math.sin((k * 10 - .75) * (2 * Math.PI / 3)) + 1
+  };
+  /** [rx, ry, rz (deg), px, py, pz, s] of a moving part at time t. */
+  function partPose(g, t) {
+    const k = g.keys, len = S.anim.len, loop = S.anim.loop !== false;
+    const P = x => [...x.r, ...x.p, x.s];
+    if (!k.length) return null;
+    if (k.length === 1) return P(k[0]);
+    t = loop ? ((t % len) + len) % len : Math.min(t, len);
+    let a = null, b = null, ta = 0, tb = 0;
+    for (let i = 0; i < k.length; i++) if (k[i].t > t) { b = k[i]; tb = b.t; if (i === 0) { if (!loop) return P(b); a = k[k.length - 1]; ta = a.t - len; } else { a = k[i - 1]; ta = a.t; } break; }
+    if (!b) { a = k[k.length - 1]; ta = a.t; if (!loop) return P(a); b = k[0]; tb = b.t + len; }
+    const f = tb - ta <= 1e-4 ? 1 : (EASE[g.ease] || EASE.smooth)(clamp((t - ta) / (tb - ta), 0, 1));
+    const A = P(a), B = P(b); return A.map((v, i) => v + (B[i] - v) * f);
+  }
+  /** Matrix that moves a part (in slot space): pivot, scale, Z, X, Y, back, then offset. flip = left half of a mirrored part. */
+  function partMatrix(g, pose, flip) {
+    if (!pose) return M.trans(0, 0, 0);
+    const d = Math.PI / 180, [rx, ry0, rz0, px0, py, pz, sc] = pose;
+    const ry = flip ? -ry0 : ry0, rz = flip ? -rz0 : rz0, px = flip ? -px0 : px0, pv = g.pivot;
+    return M.mul(M.trans(pv[0] + px, pv[1] + py, pv[2] + pz), M.mul(M.ry(ry * d), M.mul(M.rx(rx * d), M.mul(M.rz(rz * d), M.mul(M.scale(sc, sc, sc), M.trans(-pv[0], -pv[1], -pv[2]))))));
+  }
   const key = (x, y, z) => x + ',' + y + ',' + z;
   const voxMesh = new Mesh(), lines = new Mesh(), floor = new Mesh(), ghost = new Mesh(), picMesh = new Mesh(), capeMesh = new Mesh();
   let picTex = null, capeTexGL = null, capeFrames = 1;
 
   function gridMin() { return [S.center[0] - S.n[0] / 2 * S.vs, S.center[1] - S.n[1] / 2 * S.vs, S.center[2] - S.n[2] / 2 * S.vs]; }
 
+  const partMeshes = []; // [part][0 right/whole, 1 left half of a mirrored part]
+  const partOf = k => { const p = S.part.get(k) || 0; return S.anim && p < S.anim.groups.length ? p : 0; };
   function buildVox() {
     voxMesh.clear();
+    const animated = !!(S.anim && S.anim.groups.length);
+    const ng = animated ? S.anim.groups.length : 0;
+    while (partMeshes.length < ng) partMeshes.push([new Mesh(), new Mesh()]);
+    for (const pm of partMeshes) { pm[0].clear(); pm[1].clear(); }
     const g = gridMin(), vs = S.vs;
     const F = [[1, 0, 0, .8], [-1, 0, 0, .8], [0, 1, 0, 1], [0, -1, 0, .55], [0, 0, 1, .9], [0, 0, -1, .7]];
-    for (const [k, col] of S.vox) {
-      const [x, y, z] = k.split(',').map(Number), [r, gg, b] = hexRgb(col);
+    for (const [k, col0] of S.vox) {
+      const [x, y, z] = k.split(',').map(Number);
+      const gi = animated ? partOf(k) : 0;
+      let col = col0;
+      if (animated && AN.tint) { const [a1, a2, a3] = hexRgb(col0), [b1, b2, b3] = hexRgb(PART_COLS[gi % 8]); col = rgbHex((a1 * .35 + b1 * .65) * 255, (a2 * .35 + b2 * .65) * 255, (a3 * .35 + b3 * .65) * 255); }
+      const [r, gg, b] = hexRgb(col);
       const x0 = g[0] + x * vs, y0 = g[1] + y * vs, z0 = g[2] + z * vs, x1 = x0 + vs, y1 = y0 + vs, z1 = z0 + vs;
+      let tm = voxMesh;
+      if (animated) { const gr = S.anim.groups[gi]; tm = partMeshes[gi][gr.mirror && x0 + vs / 2 < gr.pivot[0] ? 1 : 0]; }
       for (const [dx, dy, dz, l] of F) {
-        if (S.vox.has(key(x + dx, y + dy, z + dz))) continue;
+        const nk = key(x + dx, y + dy, z + dz);
+        if (S.vox.has(nk) && (!animated || partOf(nk) === gi)) continue;
         const c = [r * l, gg * l, b * l, 1], uv = [[0, 0], [0, 0], [0, 0], [0, 0]];
-        if (dx === 1) voxMesh.quad([[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], uv, c);
-        if (dx === -1) voxMesh.quad([[x0, y0, z1], [x0, y1, z1], [x0, y1, z0], [x0, y0, z0]], uv, c);
-        if (dy === 1) voxMesh.quad([[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]], uv, c);
-        if (dy === -1) voxMesh.quad([[x0, y0, z1], [x0, y0, z0], [x1, y0, z0], [x1, y0, z1]], uv, c);
-        if (dz === 1) voxMesh.quad([[x1, y0, z1], [x1, y1, z1], [x0, y1, z1], [x0, y0, z1]], uv, c);
-        if (dz === -1) voxMesh.quad([[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]], uv, c);
+        if (dx === 1) tm.quad([[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], uv, c);
+        if (dx === -1) tm.quad([[x0, y0, z1], [x0, y1, z1], [x0, y1, z0], [x0, y0, z0]], uv, c);
+        if (dy === 1) tm.quad([[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]], uv, c);
+        if (dy === -1) tm.quad([[x0, y0, z1], [x0, y0, z0], [x1, y0, z0], [x1, y0, z1]], uv, c);
+        if (dz === 1) tm.quad([[x1, y0, z1], [x1, y1, z1], [x0, y1, z1], [x0, y0, z1]], uv, c);
+        if (dz === -1) tm.quad([[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]], uv, c);
       }
     }
     $('#stVox').textContent = S.vox.size.toLocaleString();
@@ -306,11 +408,18 @@
   }
   function frame(now, once) {
     resize();
-    if (needs || anim) {
+    if (needs || anim || (AN.playing && S.anim) || (LIGHTS[light].torch)) {
       needs = false;
       const t = (now - t0) / 1000;
       gl.viewport(0, 0, cv.width, cv.height);
-      gl.clearColor(.105, .105, .125, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      const LT = LIGHTS[light], bg = LT.bg;
+      gl.clearColor(bg[0], bg[1], bg[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.uniform3fv(L.tint, LT.tint); gl.uniform3fv(L.fogc, LT.fogc || [0, 0, 0]); gl.uniform1f(L.fog, LT.fog || 0);
+      if (LT.torch) { // the torch floats beside the camera, a bit up and to the left, so the side you look at is lit
+        const cp = camPos(), f = norm(sub(cam.target, cp)), r = norm(cross(f, [0, 1, 0]));
+        const tp = add(cam.target, add(f.map(v => -v * 14), add(r.map(v => -v * 9), [0, 7 + Math.sin(t * 9) * .25 + Math.sin(t * 23) * .12, 0])));
+        gl.uniform4f(L.pl, tp[0], tp[1], tp[2], LT.radius * (1 + Math.sin(t * 13) * .02)); gl.uniform3fv(L.plc, LT.torch);
+      } else { gl.uniform4f(L.pl, 0, 0, 0, 0); gl.uniform3fv(L.plc, [0, 0, 0]); }
       const P = M.persp(.75, cv.width / Math.max(1, cv.height), .5, 600);
       const V = M.look(camPos(), cam.target, [0, 1, 0]);
       VP = M.mul(P, V);
@@ -318,13 +427,13 @@
       // player
       const skinMode = MODE === 'skin', grid = $('#showGrid').checked;
       for (const k of PART_KEYS) {
-        const m = M.mul(VP, M.mul(M.trans(...PIVOT[k]), M.rx(boneAngle(k, t))));
+        const mw = M.mul(M.trans(...PIVOT[k]), M.rx(boneAngle(k, t))), m = M.mul(VP, mw);
         if (partOn[k]) {
-          parts[k].base.draw(m, skinTex, gl.TRIANGLES, skinMode ? .02 : .5);
+          parts[k].base.draw(m, skinTex, gl.TRIANGLES, skinMode ? .02 : .5, mw);
           if (skinMode && grid && paintLayer === 'base') { gl.depthMask(false); parts[k].gBase.draw(m, null, gl.LINES); gl.depthMask(true); }
         }
         if (layerOn[k]) {
-          parts[k].over.draw(m, skinTex, gl.TRIANGLES, .5);
+          parts[k].over.draw(m, skinTex, gl.TRIANGLES, .5, mw);
           if (skinMode && grid && paintLayer === 'outer') { gl.depthMask(false); parts[k].gOver.draw(m, null, gl.LINES); gl.depthMask(true); }
         }
       }
@@ -333,14 +442,26 @@
       if (capeTexGL && (capeShown || paneNow === 'cape')) {
         const fi = capeFrames > 1 ? Math.floor(t * 10) % capeFrames : 0;
         buildCape(fi);
-        capeMesh.draw(M.mul(VP, M.mul(M.trans(...PIVOT.body), M.rx(anim ? .15 + Math.sin(t * 6) * .05 : .1))), capeTexGL, gl.TRIANGLES, .5);
+        const cw = M.mul(M.trans(...PIVOT.body), M.rx(anim ? .15 + Math.sin(t * 6) * .05 : .1));
+        capeMesh.draw(M.mul(VP, cw), capeTexGL, gl.TRIANGLES, .5, cw);
       }
       // the cosmetic (+ its mirror)
       if (MODE !== 'skin') for (const left of S.mirror && S.slot !== 'head' && S.slot !== 'back' ? [false, true] : [false]) {
-        const sm = M.mul(VP, slotMatrix(left, t));
-        if (S.kind === 'voxel') voxMesh.draw(sm, null);
-        else if (picTex) picMesh.draw(M.mul(sm, picMatrix()), picTex, gl.TRIANGLES, .1);
+        const sw = slotMatrix(left, t), sm = M.mul(VP, sw);
+        const animated = S.anim && S.anim.groups.length, at = animated ? animNow() : 0;
+        if (S.kind === 'voxel') {
+          if (!animated) voxMesh.draw(sm, null, gl.TRIANGLES, .02, sw);
+          else S.anim.groups.forEach((g, gi) => {
+            if (!partMeshes[gi]) return;
+            const pose = partPose(g, at);
+            for (const side of [0, 1]) { const w = M.mul(sw, partMatrix(g, pose, side === 1)); partMeshes[gi][side].draw(M.mul(VP, w), null, gl.TRIANGLES, .02, w); }
+          });
+        } else if (picTex) {
+          const w = M.mul(sw, M.mul(animated ? partMatrix(S.anim.groups[0], partPose(S.anim.groups[0], at), false) : M.trans(0, 0, 0), picMatrix()));
+          picMesh.draw(M.mul(VP, w), picTex, gl.TRIANGLES, .1, w);
+        }
       }
+      if (HOOKS.overlay) { lightOn = false; try { HOOKS.overlay(VP, t); } catch (e) { /* */ } lightOn = true; }
       // build space + hover
       if ($('#showGrid').checked && MODE !== 'skin') {
         gl.depthMask(false);
@@ -409,7 +530,7 @@
     ghost.clear();
     if (hover) {
       const g = gridMin(), [x, y, z] = cell, vs = S.vs, k = .02;
-      const col = mode === 'erase' ? [1, .35, .4, .45] : mode === 'place' ? [...hexRgb(S.color), .45] : [1, 1, 1, .35];
+      const col = mode === 'erase' ? [1, .35, .4, .45] : mode === 'place' ? [...hexRgb(S.color), .45] : mode === 'group' ? [...hexRgb(PART_COLS[AN.sel % 8]), .55] : [1, 1, 1, .35];
       box(ghost, g[0] + x * vs - k, g[1] + y * vs - k, g[2] + z * vs - k, g[0] + (x + 1) * vs + k, g[1] + (y + 1) * vs + k, g[2] + (z + 1) * vs + k, 0, 0, 0, 0, 0, 1, 1, 0, 1);
       for (let i = 5; i < ghost.a.length; i += 9) { ghost.a[i] = col[0]; ghost.a[i + 1] = col[1]; ghost.a[i + 2] = col[2]; ghost.a[i + 3] = col[3]; }
       $('#stHover').textContent = `x ${x}  y ${y}  z ${z}`;
@@ -419,14 +540,23 @@
 
   /* ===================================================== editing ===================================================== */
   const undo = [], redo = [];
-  const snap = () => JSON.stringify([...S.vox]);
+  const snap = () => JSON.stringify({ v: [...S.vox], p: [...S.part] });
   function pushUndo() { undo.push(snap()); if (undo.length > 80) undo.shift(); redo.length = 0; }
-  function restore(s) { S.vox = new Map(JSON.parse(s)); changed(); }
+  function restore(s) { const j = JSON.parse(s); if (Array.isArray(j)) S.vox = new Map(j); else { S.vox = new Map(j.v); S.part = new Map(j.p || []); } changed(); }
   function changed() { buildVox(); save(); redraw(); }
   const mirrorCell = c => [S.n[0] - 1 - c[0], c[1], c[2]];
   function setCell(c, v) {
     const cells = [c]; if (S.symX) cells.push(mirrorCell(c));
-    for (const cc of cells) { if (cc.some((x, i) => x < 0 || x >= S.n[i])) continue; if (v) S.vox.set(key(...cc), v); else S.vox.delete(key(...cc)); }
+    for (const cc of cells) {
+      if (cc.some((x, i) => x < 0 || x >= S.n[i])) continue;
+      const k = key(...cc);
+      if (v) { if (!S.vox.has(k) && S.anim && AN.sel) S.part.set(k, AN.sel); S.vox.set(k, v); } else { S.vox.delete(k); S.part.delete(k); }
+    }
+  }
+  function setPart(c) { const cells = [c]; if (S.symX) cells.push(mirrorCell(c)); for (const cc of cells) { const k = key(...cc); if (S.vox.has(k)) { if (AN.sel) S.part.set(k, AN.sel); else S.part.delete(k); } } }
+  function shadeVox(c, darker) {
+    const cells = [c]; if (S.symX) cells.push(mirrorCell(c));
+    for (const cc of cells) { const k = key(...cc); if (!S.vox.has(k) || strokeSeen.has(k)) continue; strokeSeen.add(k); const [r, g, b] = hexRgb(S.vox.get(k)).map(v => v * 255); S.vox.set(k, rgbHex(...shadeRgb(r, g, b, darker))); }
   }
   function applyTool(e, first) {
     const r = cast(e.clientX, e.clientY); if (!r) return;
@@ -434,6 +564,9 @@
     else if (S.tool === 'erase') { if (r.hit) { setCell(r.hit, null); changed(); } }
     else if (S.tool === 'paint') { if (r.hit) { setCell(r.hit, S.color); changed(); } }
     else if (S.tool === 'pick') { if (r.hit) { setColor(S.vox.get(key(...r.hit))); setTool('place'); } }
+    else if (S.tool === 'shade') { if (first) strokeSeen = new Set(); if (r.hit) { shadeVox(r.hit, (shadeOpt.mode === 'darken') !== e.shiftKey); changed(); } }
+    else if (S.tool === 'group') { if (r.hit && S.anim) { setPart(r.hit); changed(); } }
+    else if (S.tool === 'pivot') { if (first && (r.hit || r.prev) && HOOKS.pickPivot) { const c = r.hit || r.prev, g = gridMin(); HOOKS.pickPivot([g[0] + (c[0] + .5) * S.vs, g[1] + (c[1] + .5) * S.vs, g[2] + (c[2] + .5) * S.vs]); } }
     else if (S.tool === 'fill' && first && r.hit) {
       const from = S.vox.get(key(...r.hit)); if (from === S.color) return;
       const q = [r.hit], seen = new Set();
@@ -451,12 +584,17 @@
   const paintHoverMesh = new Mesh();
   const skinUndo = [], skinRedo = [];
   function updateSkinTex() {
+    composite();
     gl.bindTexture(gl.TEXTURE_2D, skinTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, skin);
     draw2d(); redraw();
-    clearTimeout(updateSkinTex.t); updateSkinTex.t = setTimeout(() => { try { localStorage.setItem('kyoto.builder.skin', skin.toDataURL()); } catch (e) { /* */ } const p = $('#skinPrev').getContext('2d'); p.clearRect(0, 0, 64, 64); p.drawImage(skin, 0, 0); }, 300);
+    clearTimeout(updateSkinTex.t); updateSkinTex.t = setTimeout(() => { try { localStorage.setItem('kyoto.builder.skin', skin.toDataURL()); } catch (e) { /* */ } const p = $('#skinPrev').getContext('2d'); p.clearRect(0, 0, 64, 64); p.drawImage(skin, 0, 0); saveLayers(); if (HOOKS.onLayers) HOOKS.onLayers(); }, 300);
   }
-  const skinSnap = () => sg.getImageData(0, 0, 64, 64);
+  const skinSnap = () => ({ active: SL.active, list: SL.list.map(l => ({ l, name: l.name, vis: l.vis, op: l.op, blend: l.blend, lock: l.lock, img: l.g.getImageData(0, 0, 64, 64) })) });
+  function skinRestore(sn) {
+    SL.list = sn.list.map(x => { Object.assign(x.l, { name: x.name, vis: x.vis, op: x.op, blend: x.blend, lock: x.lock }); x.l.g.putImageData(x.img, 0, 0); return x.l; });
+    useLayer(sn.active); updateSkinTex();
+  }
   function pushSkinUndo() { skinUndo.push(skinSnap()); if (skinUndo.length > 100) skinUndo.shift(); skinRedo.length = 0; }
   // faces: 0 +z front, 1 -z back, 2 -x right, 3 +x left, 4 +y top, 5 -y bottom
   function faceRect(sp, uv, f) {
@@ -524,35 +662,62 @@
     return null;
   }
   const rgba = hex => { const [r, g, b] = hexRgb(hex); return [r * 255 | 0, g * 255 | 0, b * 255 | 0, 255]; };
-  function setPx(x, y, c) { const id = sg.createImageData(1, 1); id.data.set(c); sg.putImageData(id, x, y); }
-  function getPx(x, y) { const d = sg.getImageData(x, y, 1, 1).data; return [d[0], d[1], d[2], d[3]]; }
+  function setPx(x, y, c, g = pg) {
+    if (activeLayer().lock && g === pg && pg.getImageData(x, y, 1, 1).data[3] === 0) return; // alpha lock: only paint where there's already paint
+    const id = g.createImageData(1, 1); id.data.set(c); g.putImageData(id, x, y);
+  }
+  function getPx(x, y, g = pg) { const d = g.getImageData(x, y, 1, 1).data; return [d[0], d[1], d[2], d[3]]; }
+  /* ---------- shading brush: darkens / lightens what's there, shifting the hue like pixel artists do ---------- */
+  const shadeOpt = { mode: 'darken', strength: 2, hue: true, dither: false };
+  let strokeSeen = new Set();
+  function rgb2hsl(r, g, b) { r /= 255; g /= 255; b /= 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2; let h = 0, s = 0; if (mx !== mn) { const d = mx - mn; s = l > .5 ? d / (2 - mx - mn) : d / (mx + mn); h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; } return [h, s, l]; }
+  function hsl2rgb(h, s, l) { h = ((h % 360) + 360) % 360 / 360; if (!s) return [l * 255, l * 255, l * 255]; const q = l < .5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q; const f = t => { t = (t + 1) % 1; return t < 1 / 6 ? p + (q - p) * 6 * t : t < .5 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p; }; return [f(h + 1 / 3) * 255, f(h) * 255, f(h - 1 / 3) * 255]; }
+  function shadeRgb(r, g, b, darker) {
+    const k = [0, .06, .11, .17, .24][shadeOpt.strength] || .11;
+    let [h, s, l] = rgb2hsl(r, g, b);
+    if (shadeOpt.hue && s > .04) { const to = darker ? 250 : 55, d = ((to - h + 540) % 360) - 180; h += Math.sign(d) * Math.min(Math.abs(d), 5 * shadeOpt.strength); s = clamp(s + (darker ? .02 : -.02), 0, 1); }
+    l = clamp(l + (darker ? -k : k), 0, 1);
+    return hsl2rgb(h, s, l).map(v => clamp(Math.round(v), 0, 255));
+  }
+  function shadePixel(X, Y, darker) {
+    const id = X + ',' + Y; if (strokeSeen.has(id)) return; strokeSeen.add(id);
+    if (shadeOpt.dither && (X + Y) % 2) return;
+    let c = getPx(X, Y);
+    if (c[3] === 0) { if (activeLayer().lock) return; c = getPx(X, Y, sg); if (c[3] === 0) return; } // empty layer: shade what you see (great on a "Shading" layer)
+    const [r, g, b] = shadeRgb(c[0], c[1], c[2], darker);
+    const id2 = pg.createImageData(1, 1); id2.data.set([r, g, b, Math.max(c[3], 255 * (c[3] > 0))]); pg.putImageData(id2, X, Y);
+  }
   /** Applies the current skin tool at a pixel, clipped to the face it's on so brushes never bleed onto other parts. */
   function paintPixel(hit, first) {
     const sp = spec(hit.k), [rx, ry, rw, rh] = faceRect(sp, hit.layer === 'outer' ? sp.ov : sp.uv, hit.f), [x, y] = hit.px;
     const tool = S.tool;
-    if (tool === 'pick') { const c = getPx(x, y); if (c[3] > 0) { setColor(rgbHex(c[0], c[1], c[2])); setTool('place'); } return; }
+    if (tool === 'pick') { const c = getPx(x, y, sg); if (c[3] > 0) { setColor(rgbHex(c[0], c[1], c[2])); setTool('place'); } return; }
     if (tool === 'fill') {
       if (!first) return;
       const from = getPx(x, y).join(','), to = tool === 'fill' ? rgba(S.color) : [0, 0, 0, 0];
       if (from === to.join(',')) return;
-      const img = sg.getImageData(0, 0, 64, 64), st = [[x, y]], seen = new Set();
+      const img = pg.getImageData(0, 0, 64, 64), st = [[x, y]], seen = new Set(), lock = activeLayer().lock;
       while (st.length) {
         const [cx, cy] = st.pop(), k = cx + ',' + cy;
         if (seen.has(k) || cx < rx || cy < ry || cx >= rx + rw || cy >= ry + rh) continue; seen.add(k);
         const i = (cy * 64 + cx) * 4; if ([img.data[i], img.data[i + 1], img.data[i + 2], img.data[i + 3]].join(',') !== from) continue;
-        img.data.set(to, i); st.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
+        if (!(lock && img.data[i + 3] === 0)) img.data.set(to, i);
+        st.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
       }
-      sg.putImageData(img, 0, 0); return;
+      pg.putImageData(img, 0, 0); return;
     }
     const c = tool === 'erase' ? [0, 0, 0, 0] : rgba(S.color);
     const r = brush - 1;
     for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
       const X = x + dx, Y = y + dy; if (X < rx || Y < ry || X >= rx + rw || Y >= ry + rh) continue;
-      if (c[3] === 0) sg.clearRect(X, Y, 1, 1); else setPx(X, Y, c);
+      if (tool === 'shade') shadePixel(X, Y, (shadeOpt.mode === 'darken') !== !!hit.invert);
+      else if (c[3] === 0) pg.clearRect(X, Y, 1, 1); else setPx(X, Y, c);
     }
   }
   function paint3d(e, first) {
+    if (first) strokeSeen = new Set();
     const hit = pickPixel(e.clientX, e.clientY); if (!hit) return;
+    hit.invert = e.shiftKey;
     paintPixel(hit, first);
     if (mirrorPaint) { const m = mirrorHit(hit); if (m && !(m.k === hit.k && m.px[0] === hit.px[0] && m.px[1] === hit.px[1])) paintPixel(m, first); }
     updateSkinTex();
@@ -620,7 +785,8 @@
     const px = Math.floor((e.clientX - r.left) / r.width * 64), py = Math.floor((e.clientY - r.top) / r.height * 64);
     const R = region2d(px, py); if (!R) return;
     if (R.lay === 'base' ? !partOn[R.k] : !layerOn[R.k]) return;
-    paintPixel({ k: R.k, layer: R.lay, f: R.f, px: [px, py] }, first);
+    if (first) strokeSeen = new Set();
+    paintPixel({ k: R.k, layer: R.lay, f: R.f, px: [px, py], invert: e.shiftKey }, first);
     updateSkinTex();
   }
   function wire2d() {
@@ -644,8 +810,7 @@
   }
   function clearSkin(all) {
     pushSkinUndo();
-    if (all) sg.clearRect(0, 0, 64, 64);
-    else for (const R of REGIONS()) if (R.lay === 'outer') sg.clearRect(...R.r);
+    for (const ly of SL.list) { if (all) ly.g.clearRect(0, 0, 64, 64); else for (const R of REGIONS()) if (R.lay === 'outer') ly.g.clearRect(...R.r); }
     updateSkinTex();
     toast(all ? 'Skin cleared' : 'Outer layer cleared', 'Ctrl+Z brings it back.');
   }
@@ -662,6 +827,8 @@
     $('#kindLabel').textContent = m === 'skin' ? (paintLayer === 'base' ? 'Painting the base layer' : 'Painting the outer layer') : (S.kind === 'voxel' ? 'Voxel' : 'Picture');
     $('#tools').style.opacity = m === 'skin' || S.kind === 'voxel' ? 1 : .35;
     $('[data-tool=paint]').hidden = m === 'skin';
+    $$('[data-tool=group],[data-tool=pivot]').forEach(b => b.hidden = m === 'skin' || !S.anim);
+    if (m === 'skin' && (S.tool === 'group' || S.tool === 'pivot')) setTool('place');
     if (m === 'skin' && S.tool === 'paint') setTool('place');
     setTool(S.tool);
     hover = null; ghost.clear(); paintHoverMesh.clear(); paintHover = null;
@@ -697,10 +864,10 @@
       redraw(); return;
     }
     if (MODE === 'skin') {
-      if (drag && drag.mode === 'skin' && (S.tool === 'place' || S.tool === 'erase')) paint3d(e, false);
+      if (drag && drag.mode === 'skin' && (S.tool === 'place' || S.tool === 'erase' || S.tool === 'shade')) paint3d(e, false);
       updatePaintHover(e); return;
     }
-    if (drag && drag.mode === 'edit' && (S.tool === 'erase' || S.tool === 'paint')) applyTool(e, false);
+    if (drag && drag.mode === 'edit' && (S.tool === 'erase' || S.tool === 'paint' || S.tool === 'shade' || S.tool === 'group')) applyTool(e, false);
     updateHover(e);
   });
   cv.addEventListener('pointerup', () => { drag = null; });
@@ -708,10 +875,10 @@
   cv.addEventListener('wheel', e => { e.preventDefault(); cam.dist = clamp(cam.dist * Math.exp(e.deltaY * .0012), 6, 200); redraw(); }, { passive: false });
 
   /* ===================================================== UI ===================================================== */
-  const TOOL_NAMES = { place: 'Place', erase: 'Erase', paint: 'Paint', pick: 'Pick colour', fill: 'Fill (bucket)' };
-  const HINTS = { place: 'Left click: place a voxel', erase: 'Left click / drag: erase', paint: 'Left click / drag: paint', pick: 'Left click a voxel to use its colour', fill: 'Left click: repaint every touching voxel of that colour' };
-  const SKIN_TOOL_NAMES = { place: 'Pencil', erase: 'Eraser', paint: 'Pencil', pick: 'Pick colour', fill: 'Fill' };
-  const SKIN_HINTS = { place: 'Left click / drag: draw pixels', erase: 'Left click / drag: erase pixels', paint: 'Left click / drag: draw', pick: 'Left click: grab a colour from the skin', fill: 'Left click: fill an area of one colour (stays on that face)' };
+  const TOOL_NAMES = { place: 'Place', erase: 'Erase', paint: 'Paint', pick: 'Pick colour', fill: 'Fill (bucket)', shade: 'Shade', group: 'Moving part brush', pivot: 'Set pivot' };
+  const HINTS = { place: 'Left click: place a voxel', erase: 'Left click / drag: erase', paint: 'Left click / drag: paint', pick: 'Left click a voxel to use its colour', fill: 'Left click: repaint every touching voxel of that colour', shade: 'Drag: darken (Shift: lighten) once per stroke', group: 'Drag over voxels to put them in the selected moving part', pivot: 'Click a voxel: the part turns around that point' };
+  const SKIN_TOOL_NAMES = { place: 'Pencil', erase: 'Eraser', paint: 'Pencil', pick: 'Pick colour', fill: 'Fill', shade: 'Shading brush', group: 'Pencil', pivot: 'Pencil' };
+  const SKIN_HINTS = { place: 'Left click / drag: draw pixels', erase: 'Left click / drag: erase pixels', paint: 'Left click / drag: draw', pick: 'Left click: grab a colour from the skin', fill: 'Left click: fill an area of one colour (stays on that face)', shade: 'Drag: shade (Shift: the other way). Each pixel changes once per stroke', group: '', pivot: '' };
   function setTool(t) {
     S.tool = t; $$('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
     const sk = typeof MODE !== 'undefined' && MODE === 'skin';
@@ -725,16 +892,18 @@
     if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); return act(e.shiftKey ? 'redo' : 'undo'); }
     if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); return act('redo'); }
     if ((e.ctrlKey || e.metaKey) && k === 's') { e.preventDefault(); return act('export'); }
-    const map = { p: 'place', e: 'erase', b: 'paint', i: 'pick', f: 'fill' };
-    if (map[k]) setTool(map[k]);
+    const map = { p: 'place', e: 'erase', b: 'paint', i: 'pick', f: 'fill', s: 'shade' };
+    if (map[k] && !e.ctrlKey && !e.metaKey && !e.altKey) setTool(map[k]);
+    if (k === 'g' && MODE !== 'skin' && S.anim) setTool('group');
+    if (k === ' ' && S.anim && MODE !== 'skin' && HOOKS.togglePlay) { e.preventDefault(); HOOKS.togglePlay(); }
     if (k === 'm') { if (MODE === 'skin') { const c = $('#mirrorPaint'); c.checked = !c.checked; c.onchange({ target: c }); toast(c.checked ? 'Mirror on' : 'Mirror off', ''); } else $('[data-toggle=symX]').click(); }
     if (k === '.' || k === 'home') frameView();
   });
 
   function act(a) {
     if (MODE === 'skin' && (a === 'undo' || a === 'redo' || a === 'clear')) {
-      if (a === 'undo' && skinUndo.length) { skinRedo.push(skinSnap()); sg.putImageData(skinUndo.pop(), 0, 0); updateSkinTex(); }
-      else if (a === 'redo' && skinRedo.length) { skinUndo.push(skinSnap()); sg.putImageData(skinRedo.pop(), 0, 0); updateSkinTex(); }
+      if (a === 'undo' && skinUndo.length) { skinRedo.push(skinSnap()); skinRestore(skinUndo.pop()); }
+      else if (a === 'redo' && skinRedo.length) { skinUndo.push(skinSnap()); skinRestore(skinRedo.pop()); }
       else if (a === 'clear') clearSkin(true);
       return;
     }
@@ -985,9 +1154,16 @@
   /* ===================================================== files ===================================================== */
   function exportData() {
     const base = { format: 'kycos', version: 1, name: S.name || 'Cosmetic', author: me ? me.name : '', slot: S.slot, kind: S.kind, mirror: S.mirror && (S.slot === 'arm' || S.slot === 'leg') };
+    const an = animOut(); if (an) base.anim = an;
     if (S.kind === 'texture') return Object.assign(base, { texture: { png: (S.pic || ',').split(',')[1], size: S.picSize, offset: S.picOff, rot: S.picRot } });
     const pal = [...new Set(S.vox.values())], idx = new Map(pal.map((c, i) => [c, i]));
-    return Object.assign(base, { grid: { n: S.n, vs: S.vs, center: S.center }, palette: pal, voxels: [...S.vox].map(([k, c]) => [...k.split(',').map(Number), idx.get(c)]) });
+    const out = Object.assign(base, { grid: { n: S.n, vs: S.vs, center: S.center }, palette: pal, voxels: [...S.vox].map(([k, c]) => S.anim && S.anim.groups.length > 1 ? [...k.split(',').map(Number), idx.get(c), partOf(k)] : [...k.split(',').map(Number), idx.get(c)]) });
+    return out;
+  }
+  function animOut() {
+    if (!S.anim || !S.anim.groups.length || !S.anim.groups.some(g => g.keys.length)) return null;
+    const r = v => Math.round(v * 1000) / 1000;
+    return { len: r(S.anim.len), loop: S.anim.loop !== false, groups: S.anim.groups.slice(0, 8).map(g => ({ name: g.name, pivot: g.pivot.map(r), mirror: !!g.mirror, ease: g.ease || 'smooth', keys: g.keys.slice().sort((a, b) => a.t - b.t).map(k => ({ t: r(k.t), r: k.r.map(r), p: k.p.map(r), s: r(k.s) })) })) };
   }
   function validate() {
     if (S.kind === 'voxel' && !S.vox.size) { toast('Nothing to export yet', 'Place some voxels first.', 'bad'); return false; }
@@ -1008,6 +1184,8 @@
   function loadKycos(d) {
     if (d.format !== 'kycos') throw new Error('Not a .kycos file');
     S.name = d.name || 'Cosmetic'; S.mirror = !!d.mirror;
+    S.anim = d.anim && Array.isArray(d.anim.groups) ? JSON.parse(JSON.stringify(d.anim)) : null; S.part = new Map(); AN.t = 0; AN.sel = 0;
+    if (HOOKS.onAnim) HOOKS.onAnim();
     setSlot(d.slot in SLOT_DEF ? d.slot : 'head', true);
     if (d.kind === 'texture') {
       S.pic = 'data:image/png;base64,' + d.texture.png; S.picSize = d.texture.size; S.picOff = d.texture.offset; S.picRot = d.texture.rot;
@@ -1015,6 +1193,7 @@
     } else {
       S.n = d.grid.n.slice(); S.vs = d.grid.vs; S.center = d.grid.center.slice();
       S.vox = new Map(d.voxels.map(v => [key(v[0], v[1], v[2]), d.palette[v[3]] || '#ffffff']));
+      S.part = new Map(d.voxels.filter(v => v[4] > 0).map(v => [key(v[0], v[1], v[2]), v[4]]));
       for (const c of d.palette) if (!S.palette.includes(c)) S.palette.push(c);
       setKind('voxel');
     }
@@ -1097,14 +1276,15 @@
     clearTimeout(saveT);
     saveT = setTimeout(() => {
       try {
-        localStorage.setItem('kyoto.builder', JSON.stringify({ name: S.name, slot: S.slot, kind: S.kind, mirror: S.mirror, n: S.n, vs: S.vs, center: S.center, vox: [...S.vox], color: S.color, palette: S.palette, pic: S.pic, picSize: S.picSize, picOff: S.picOff, picRot: S.picRot }));
+        localStorage.setItem('kyoto.builder', JSON.stringify({ name: S.name, slot: S.slot, kind: S.kind, mirror: S.mirror, n: S.n, vs: S.vs, center: S.center, vox: [...S.vox], color: S.color, palette: S.palette, pic: S.pic, picSize: S.picSize, picOff: S.picOff, picRot: S.picRot, anim: S.anim, part: [...S.part] }));
         $('#stSaved').textContent = 'Autosaved ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
       } catch (e) { $('#stSaved').textContent = 'Too big to autosave - export it'; }
       if (HOOKS.onSave) HOOKS.onSave();
     }, 400);
   }
   function reset() {
-    Object.assign(S, { name: 'My Cosmetic', mirror: false, vox: new Map(), pic: null, picSize: [8, 8], picOff: [0, 4, -5], picRot: [0, 0, 0] });
+    Object.assign(S, { name: 'My Cosmetic', mirror: false, vox: new Map(), pic: null, picSize: [8, 8], picOff: [0, 4, -5], picRot: [0, 0, 0], anim: null, part: new Map() });
+    AN.t = 0; AN.playing = false; AN.sel = 0; if (HOOKS.onAnim) HOOKS.onAnim();
     undo.length = 0; redo.length = 0;
     setSlot('head', false); setKind('voxel'); syncInputs(); buildVox(); buildPic(); save();
   }
@@ -1117,16 +1297,29 @@
     renderNow: () => { needs = true; frame(performance.now(), true); },
     skinPng: () => skin.toDataURL('image/png'),
     loadSkinUrl: (url, slim) => new Promise(res => { const i = new Image(); i.onload = () => { loadSkinImage(i, slim); res(true); }; i.onerror = () => res(false); i.src = url; }),
-    state: () => ({ name: S.name, slot: S.slot, kind: S.kind, mirror: S.mirror, n: S.n, vs: S.vs, center: S.center, vox: [...S.vox], color: S.color, palette: S.palette, pic: S.pic, picSize: S.picSize, picOff: S.picOff, picRot: S.picRot, mode: MODE, arms, skin: skin.toDataURL('image/png') }),
-    loadState: st => { localStorage.setItem('kyoto.builder', JSON.stringify(st)); if (st.skin) localStorage.setItem('kyoto.builder.skin', st.skin); else localStorage.removeItem('kyoto.builder.skin'); if (st.arms) localStorage.setItem('kyoto.builder.arms', st.arms); if (st.mode) { MODE = st.mode; localStorage.setItem('kyoto.studio.mode', st.mode); } }
+    state: () => ({ name: S.name, slot: S.slot, kind: S.kind, mirror: S.mirror, n: S.n, vs: S.vs, center: S.center, vox: [...S.vox], color: S.color, palette: S.palette, pic: S.pic, picSize: S.picSize, picOff: S.picOff, picRot: S.picRot, anim: S.anim, part: [...S.part], mode: MODE, arms, skin: skin.toDataURL('image/png'), layers: SL.list.length > 1 ? layersJson() : null }),
+    loadState: st => { localStorage.setItem('kyoto.builder', JSON.stringify(st)); if (st.skin) localStorage.setItem('kyoto.builder.skin', st.skin); else localStorage.removeItem('kyoto.builder.skin'); if (st.layers) localStorage.setItem('kyoto.studio.layers', JSON.stringify(st.layers)); else localStorage.removeItem('kyoto.studio.layers'); if (st.arms) localStorage.setItem('kyoto.builder.arms', st.arms); if (st.mode) { MODE = st.mode; localStorage.setItem('kyoto.studio.mode', st.mode); } },
+    // Studio Pro (studio-pro.js): animation, layers, shading, lighting, capes, collab
+    M, Mesh, box, gl, texFrom, hexRgb, rgbHex, clamp, AN, PART_COLS, partPose, partMatrix, animOut, EASE, slotMatrix, SLOT_PIVOT, gridMin, LIGHTS,
+    setLight, getLight: () => light, setTool, getTool: () => S.tool, shadeOpt, shadeRgb, setArmsRaw: a => setArms(a),
+    layers: SL, mkLayer, useLayer, composite, updateSkinTex, pushSkinUndo, layersJson, loadLayersJson, activeLayer,
+    useCapeStrip: (out, frames, name) => { capeOut = out; capeFrames = frames; capeName = name || 'cape'; const prev = $('#capeTex'); prev.width = out.width; prev.height = out.height / frames; prev.getContext('2d').drawImage(out, 0, 0, out.width, out.height / frames, 0, 0, prev.width, prev.height); if (capeTexGL) gl.deleteTexture(capeTexGL); capeTexGL = texFrom(out); capeShown = true; $('#capeDl').disabled = $('#capeUse').disabled = $('#capePost').disabled = false; redraw(); },
+    hoverWorld: () => {
+      if (MODE === 'skin') return paintHover ? paintHover.P.slice() : null;
+      if (!hover) return null; const g = gridMin(), c = hover.cell, pv = SLOT_PIVOT[S.slot];
+      return [pv[0] + g[0] + (c[0] + .5) * S.vs, pv[1] + g[1] + (c[1] + .5) * S.vs, pv[2] + g[2] + (c[2] + .5) * S.vs];
+    },
+    project: w => { if (!VP) return null; const r = cv.getBoundingClientRect(); const x = VP[0] * w[0] + VP[4] * w[1] + VP[8] * w[2] + VP[12], y = VP[1] * w[0] + VP[5] * w[1] + VP[9] * w[2] + VP[13], ww = VP[3] * w[0] + VP[7] * w[1] + VP[11] * w[2] + VP[15]; if (ww <= 0) return null; return [(x / ww * .5 + .5) * r.width, (1 - (y / ww * .5 + .5)) * r.height]; },
+    skinCanvas: skin, loadPicTex: () => loadPicTex(), buildPlayerNow: () => buildPlayer(), draw2d: () => draw2d()
   };
   function start() {
     let saved = null; try { saved = JSON.parse(localStorage.getItem('kyoto.builder') || 'null'); } catch (e) { /* */ }
     const sk = localStorage.getItem('kyoto.builder.skin');
     arms = localStorage.getItem('kyoto.builder.arms') || 'wide'; setArms(arms);
-    if (sk) { const i = new Image(); i.onload = () => loadSkinImage(i); i.src = sk; } else defaultSkin();
+    let layersSaved = null; try { layersSaved = JSON.parse(localStorage.getItem('kyoto.studio.layers') || 'null'); } catch (e) { /* */ }
+    if (sk) { const i = new Image(); i.onload = () => { loadSkinImage(i); if (layersSaved) loadLayersJson(layersSaved); }; i.src = sk; } else defaultSkin();
     if (saved) {
-      Object.assign(S, { name: saved.name, mirror: saved.mirror, n: saved.n, vs: saved.vs, center: saved.center, vox: new Map(saved.vox || []), color: saved.color || S.color,
+      Object.assign(S, { name: saved.name, mirror: saved.mirror, n: saved.n, vs: saved.vs, center: saved.center, vox: new Map(saved.vox || []), color: saved.color || S.color, anim: saved.anim || null, part: new Map(saved.part || []),
         palette: saved.palette && saved.palette.length ? saved.palette : PALETTE0.slice(), pic: saved.pic, picSize: saved.picSize || S.picSize, picOff: saved.picOff || S.picOff, picRot: saved.picRot || S.picRot });
       setSlot(saved.slot || 'head', true); setKind(saved.kind || 'voxel'); loadPicTex();
     } else { setSlot('head', false); setKind('voxel'); }

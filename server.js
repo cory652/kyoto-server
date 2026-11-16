@@ -675,6 +675,103 @@ routes['GET /dm/img'] = async (req, res, body, me) => {
 if (!db.screens) db.screens = {};
 const YT = /^https:\/\/(www\.|m\.|music\.|clips\.|player\.)?(youtube\.com|youtu\.be|twitch\.tv|kick\.com|vimeo\.com|dailymotion\.com|dai\.ly|streamable\.com)\//i;
 function screenOut(s) { return Object.assign({}, s, { owner: nameOf(s.ownerUuid) }); }
+// ---------------- Live Rooms: watch parties (synced video + chat), in game and on the website ----------------
+// Kept in memory: a room lives while people are in it (closes 10 minutes after everyone leaves).
+const ROOMS = new Map(); // id -> room
+const ytId = u => { const m = /(?:youtu\.be\/|[?&]v=|\/shorts\/|\/live\/|\/embed\/)([\w-]{11})/.exec(String(u || '')); return m ? m[1] : null; };
+async function videoTitle(url) {
+  try {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 4000);
+    const r = await fetch('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent(url), { signal: ctl.signal }); clearTimeout(t);
+    if (r.ok) { const d = await r.json(); return cleanStr(d.title, 100) || url; }
+  } catch (e) { /* offline / not YouTube */ }
+  return url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60);
+}
+function roomPos(v) { return !v ? 0 : v.playing ? v.pos + (Date.now() - v.at) / 1000 : v.pos; }
+function roomOut(r, me) {
+  const members = [...r.members.entries()].filter(([, t]) => Date.now() - t < 20000).map(([u]) => u);
+  return { id: r.id, name: r.name, host: nameOf(r.host), hostMe: r.host === me, privacy: r.privacy, control: r.control,
+    canControl: r.control === 'everyone' || r.host === me || isStaff(me),
+    video: r.video ? { url: r.video.url, title: r.video.title, yt: ytId(r.video.url), playing: r.video.playing, pos: roomPos(r.video), by: r.video.by } : null,
+    queue: r.queue.map(q => ({ url: q.url, title: q.title, by: q.by })), members: members.map(u => ({ name: nameOf(u), host: u === r.host })), viewers: members.length };
+}
+function roomVisible(r, me) { return r.privacy === 'public' || r.host === me || r.members.has(me) || areFriends(r.host, me) || isStaff(me); }
+setInterval(() => {
+  for (const [id, r] of ROOMS) {
+    for (const [u, t] of r.members) if (Date.now() - t > 30000) r.members.delete(u);
+    if (r.members.size === 0 && Date.now() - r.lastActive > 10 * 60000) ROOMS.delete(id);
+    else if (r.members.size && !r.members.has(r.host)) { r.host = [...r.members.keys()][0]; r.chat.push({ id: H.seq++, sys: true, text: nameOf(r.host) + ' is the host now', at: Date.now() }); }
+    // a finished video moves on to the next one in the queue
+    if (r.video && r.video.playing && r.video.dur && roomPos(r.video) > r.video.dur + 2 && r.queue.length) { const n = r.queue.shift(); r.video = { url: n.url, title: n.title, by: n.by, playing: true, pos: 0, at: Date.now() }; }
+  }
+}, 5000);
+routes['GET /rooms'] = async (req, res, body, me) => {
+  const list = [...ROOMS.values()].filter(r => roomVisible(r, me)).map(r => roomOut(r, me)).sort((a, b) => b.viewers - a.viewers);
+  send(res, 200, { rooms: list.map(r => ({ id: r.id, name: r.name, host: r.host, privacy: r.privacy, viewers: r.viewers, now: r.video ? r.video.title : '', yt: r.video ? r.video.yt : null })) });
+};
+routes['POST /rooms/create'] = async (req, res, body, me) => {
+  if (isBanned(me)) return fail(res, 403, 'Banned');
+  const name = clean(body.name, 40) || nameOf(me) + "'s room";
+  if (FILTER.isBad(name)) return fail(res, 400, 'Pick another name');
+  for (const [id, r] of ROOMS) if (r.host === me) ROOMS.delete(id); // one room each
+  const id = crypto.randomBytes(4).toString('hex');
+  const r = { id, name, host: me, privacy: body.privacy === 'friends' ? 'friends' : 'public', control: body.control === 'everyone' ? 'everyone' : 'host',
+    video: null, queue: [], members: new Map([[me, Date.now()]]), chat: [], lastActive: Date.now() };
+  ROOMS.set(id, r);
+  if (body.url && YT.test(String(body.url))) r.video = { url: String(body.url), title: await videoTitle(String(body.url)), by: nameOf(me), playing: true, pos: 0, at: Date.now() };
+  send(res, 200, { id });
+};
+routes['GET /rooms/state'] = async (req, res, body, me) => {
+  const r = ROOMS.get(String(q(req).get('id') || ''));
+  if (!r || !roomVisible(r, me)) return fail(res, 404, 'That room is closed');
+  r.members.set(me, Date.now()); r.lastActive = Date.now();
+  const since = Number(q(req).get('since')) || 0;
+  send(res, 200, { now: Date.now(), room: roomOut(r, me), messages: r.chat.filter(m => m.at > since).slice(-60).map(m => m.sys ? m : { id: m.id, name: nameOf(m.uuid), text: m.text, at: m.at, me: m.uuid === me }) });
+};
+routes['POST /rooms/leave'] = async (req, res, body, me) => { const r = ROOMS.get(String(body.id || '')); if (r) r.members.delete(me); send(res, 200, { ok: true }); };
+routes['POST /rooms/chat'] = async (req, res, body, me) => {
+  const r = ROOMS.get(String(body.id || '')); if (!r || !roomVisible(r, me)) return fail(res, 404, 'That room is closed');
+  const text = clean(body.text, 200); if (!text || !checkText(res, me, text)) return text ? undefined : fail(res, 400, 'Empty');
+  if (slowmode(me + 'room', 800)) return fail(res, 429, 'Slow down');
+  r.chat.push({ id: H.seq++, uuid: me, text, at: Date.now() }); if (r.chat.length > 200) r.chat.shift();
+  send(res, 200, { ok: true });
+};
+routes['POST /rooms/control'] = async (req, res, body, me) => {
+  const r = ROOMS.get(String(body.id || '')); if (!r || !roomVisible(r, me)) return fail(res, 404, 'That room is closed');
+  const can = r.control === 'everyone' || r.host === me || isStaff(me);
+  const a = String(body.action || '');
+  if (a === 'queue') {
+    if (!YT.test(String(body.url || ''))) return fail(res, 400, 'Paste a YouTube link');
+    if (r.queue.length >= 30) return fail(res, 400, 'The queue is full');
+    const url = String(body.url).slice(0, 300);
+    const item = { url, title: await videoTitle(url), by: nameOf(me) };
+    if (!r.video) r.video = Object.assign({}, item, { playing: true, pos: 0, at: Date.now() }); else r.queue.push(item);
+    r.chat.push({ id: H.seq++, sys: true, text: nameOf(me) + ' added ' + item.title, at: Date.now() });
+    return send(res, 200, { ok: true });
+  }
+  if (a === 'duration') { if (r.video && !r.video.dur) r.video.dur = Math.max(0, Math.min(86400, Number(body.dur) || 0)); return send(res, 200, { ok: true }); }
+  if (!can) return fail(res, 403, 'Only the host can control this room');
+  const v = r.video;
+  if (a === 'load') {
+    if (!YT.test(String(body.url || ''))) return fail(res, 400, 'Paste a YouTube link');
+    const url = String(body.url).slice(0, 300);
+    r.video = { url, title: await videoTitle(url), by: nameOf(me), playing: true, pos: 0, at: Date.now() };
+    r.chat.push({ id: H.seq++, sys: true, text: nameOf(me) + ' is playing ' + r.video.title, at: Date.now() });
+  } else if (a === 'play' && v) { v.pos = roomPos(v); v.at = Date.now(); v.playing = true; }
+  else if (a === 'pause' && v) { v.pos = roomPos(v); v.at = Date.now(); v.playing = false; }
+  else if (a === 'seek' && v) { v.pos = Math.max(0, Number(body.pos) || 0); v.at = Date.now(); }
+  else if (a === 'skip') { const n = r.queue.shift(); r.video = n ? { url: n.url, title: n.title, by: n.by, playing: true, pos: 0, at: Date.now() } : null; }
+  else if (a === 'remove') { r.queue.splice(Number(body.index) || 0, 1); }
+  else if (a === 'settings' && (r.host === me || isStaff(me))) {
+    if (body.name) { const n = clean(body.name, 40); if (n && !FILTER.isBad(n)) r.name = n; }
+    if (body.privacy) r.privacy = body.privacy === 'friends' ? 'friends' : 'public';
+    if (body.control) r.control = body.control === 'everyone' ? 'everyone' : 'host';
+  } else if (a === 'close' && (r.host === me || isStaff(me))) { ROOMS.delete(r.id); }
+  else return fail(res, 400, 'Unknown action');
+  r.lastActive = Date.now();
+  send(res, 200, { ok: true });
+};
+
 routes['GET /screens'] = async (req, res, body, me) => {
   const key = String(q(req).get('server') || '').toLowerCase().slice(0, 80);
   send(res, 200, { now: Date.now(), screens: (db.screens[key] || []).map(screenOut) });
@@ -993,7 +1090,7 @@ function checkKycos(raw) {
     const pal = (Array.isArray(d.palette) ? d.palette : []).slice(0, 256).map(c => hex(c, '#ffffff'));
     const vox = Array.isArray(d.voxels) ? d.voxels : [];
     if (!pal.length || !vox.length || vox.length > 12000) return { error: 'A cosmetic needs 1 to 12000 voxels' };
-    for (const v of vox) if (!Array.isArray(v) || v.length !== 4 || v[0] < 0 || v[1] < 0 || v[2] < 0 || v[0] >= g.n[0] || v[1] >= g.n[1] || v[2] >= g.n[2] || !(v[3] >= 0 && v[3] < pal.length)) return { error: 'Bad voxel' };
+    for (const v of vox) if (!Array.isArray(v) || (v.length !== 4 && v.length !== 5) || v[0] < 0 || v[1] < 0 || v[2] < 0 || v[0] >= g.n[0] || v[1] >= g.n[1] || v[2] >= g.n[2] || !(v[3] >= 0 && v[3] < pal.length) || (v.length === 5 && !(v[4] >= 0 && v[4] < 8))) return { error: 'Bad voxel' };
     out.grid = { n: g.n.map(Math.round), vs: g.vs, center: g.center }; out.palette = pal; out.voxels = vox.map(v => v.map(Math.round));
   } else {
     const t = d.texture || {};
@@ -1001,6 +1098,24 @@ function checkKycos(raw) {
     if (!png.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) || png.length > 300000) return { error: 'The picture must be a PNG under 300 KB' };
     if (!nums(t.size, 2, 0.5, 64) || !nums(t.offset, 3, -64, 64) || !nums(t.rot, 3, -360, 360)) return { error: 'Bad picture placement' };
     out.texture = { png: png.toString('base64'), size: t.size, offset: t.offset, rot: t.rot };
+  }
+  // animation: up to 8 moving parts, each with keyframes (rotation, offset, scale) over a looping timeline
+  if (d.anim && typeof d.anim === 'object') {
+    const a = d.anim, len = Number(a.len);
+    if (!(len >= 0.1 && len <= 30) || !Array.isArray(a.groups) || a.groups.length > 8) return { error: 'Bad animation' };
+    const EASES = ['linear', 'smooth', 'bounce', 'step', 'elastic'];
+    const groups = [];
+    for (const gr of a.groups) {
+      if (!gr || !nums(gr.pivot, 3, -64, 64) || !Array.isArray(gr.keys) || gr.keys.length > 48) return { error: 'Bad animation part' };
+      const keys = [];
+      for (const k of gr.keys) {
+        if (!k || !(k.t >= 0 && k.t <= len) || !nums(k.r, 3, -1440, 1440) || !nums(k.p, 3, -48, 48) || !(k.s >= 0.05 && k.s <= 4)) return { error: 'Bad keyframe' };
+        keys.push({ t: +k.t, r: k.r.map(Number), p: k.p.map(Number), s: +k.s });
+      }
+      keys.sort((x, y) => x.t - y.t);
+      groups.push({ name: cleanStr(gr.name || 'Part', 20), pivot: gr.pivot.map(Number), mirror: !!gr.mirror, ease: EASES.includes(gr.ease) ? gr.ease : 'smooth', keys });
+    }
+    out.anim = { len, loop: a.loop !== false, groups };
   }
   return { json: JSON.stringify(out), slot: out.slot };
 }
@@ -1053,15 +1168,92 @@ routes['GET /mcskin'] = async (req, res) => {
   } catch (e) { fail(res, 502, 'Couldn\'t get that skin'); }
 };
 
+// ---------------- Kyoto Studio collab links: live co-editing (in memory, rooms close after 30 min idle) ----------------
+// Each editor sends small "ops" (voxel/pixel/settings changes) and polls for everyone else's. A snapshot lets late joiners catch up.
+const COLLAB = new Map(); // code -> session
+const COLLAB_COLOURS = ['#ff8fc8', '#6ee7b7', '#7cc4ff', '#ffd166', '#c39bff', '#ff9f6e', '#5eead4', '#f472b6'];
+function collabSweep() { const now = Date.now(); for (const [c, s] of COLLAB) { for (const [id, m] of s.members) if (now - m.at > 15000) s.members.delete(id); if (now - s.seen > 30 * 60000) COLLAB.delete(c); } }
+setInterval(collabSweep, 10000).unref();
+const collabMembers = s => [...s.members].map(([id, m]) => ({ id, name: m.name, color: m.color, cursor: m.cursor, mode: m.mode, host: id === s.host }));
+function collabMember(s, cid, me, body) {
+  let m = s.members.get(cid);
+  if (!m) {
+    if (s.members.size >= 8) return null;
+    const used = new Set([...s.members.values()].map(x => x.color));
+    m = { name: me ? nameOf(me) : 'Guest ' + cid.slice(-4).toUpperCase(), color: COLLAB_COLOURS.find(c => !used.has(c)) || COLLAB_COLOURS[0], at: 0, cursor: null, mode: '' };
+    s.members.set(cid, m);
+  }
+  m.at = Date.now(); if (body.cursor !== undefined) m.cursor = Array.isArray(body.cursor) ? body.cursor.slice(0, 4).map(Number) : null; if (body.mode) m.mode = String(body.mode).slice(0, 10);
+  return m;
+}
+const collabCid = b => /^[a-z0-9]{6,24}$/.test(String(b.cid || '')) ? String(b.cid) : null;
+routes['POST /collab/create'] = async (req, res, body, me) => {
+  const cid = collabCid(body); if (!cid) return fail(res, 400, 'Bad client');
+  if (slowmode('collab' + (me || cid), 5000)) return fail(res, 429, 'Wait a few seconds');
+  if (COLLAB.size > 300) collabSweep();
+  if (COLLAB.size > 300) return fail(res, 503, 'Too many collab rooms right now, try again soon');
+  let code; do code = Array.from({ length: 6 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.random() * 32 | 0]).join(''); while (COLLAB.has(code));
+  const snap = JSON.stringify(body.state || {}); if (snap.length > 3500000) return fail(res, 400, 'Project too big to share live');
+  const s = { code, host: cid, created: Date.now(), seen: Date.now(), members: new Map(), ops: [], seq: 0, snapshot: snap, snapSeq: 0, locked: false };
+  COLLAB.set(code, s); collabMember(s, cid, me, body);
+  send(res, 200, { code, seq: 0, members: collabMembers(s) });
+};
+routes['POST /collab/join'] = async (req, res, body, me) => {
+  const cid = collabCid(body); const s = COLLAB.get(String(body.code || '').toUpperCase());
+  if (!cid) return fail(res, 400, 'Bad client'); if (!s) return fail(res, 404, 'That collab link expired or doesn\'t exist');
+  if (s.locked && !s.members.has(cid)) return fail(res, 403, 'The host locked this room');
+  if (!collabMember(s, cid, me, body)) return fail(res, 403, 'The room is full (8 max)');
+  s.seen = Date.now();
+  send(res, 200, { code: s.code, snapshot: s.snapshot, seq: s.seq, ops: s.ops.filter(o => o.seq > s.snapSeq), members: collabMembers(s), host: s.host === cid });
+};
+routes['POST /collab/sync'] = async (req, res, body, me) => {
+  const cid = collabCid(body); const s = COLLAB.get(String(body.code || '').toUpperCase());
+  if (!cid || !s) return send(res, 200, { gone: true });
+  if (!s.members.has(cid) && s.locked) return send(res, 200, { gone: true });
+  if (!collabMember(s, cid, me, body)) return send(res, 200, { gone: true });
+  s.seen = Date.now();
+  const ops = Array.isArray(body.ops) ? body.ops.slice(0, 400) : [];
+  for (const op of ops) {
+    const j = JSON.stringify(op); if (j.length > 600000) continue;
+    s.ops.push({ seq: ++s.seq, by: cid, op });
+  }
+  if (s.ops.length > 6000) s.ops.splice(0, s.ops.length - 6000);
+  const since = Number(body.since) || 0;
+  if (s.ops.length && since < s.ops[0].seq - 1 && since < s.snapSeq) return send(res, 200, { resync: true, snapshot: s.snapshot, seq: s.seq, ops: s.ops.filter(o => o.seq > s.snapSeq), members: collabMembers(s) });
+  send(res, 200, { seq: s.seq, ops: s.ops.filter(o => o.seq > since && o.by !== cid), members: collabMembers(s), locked: s.locked });
+};
+// any member can refresh the snapshot (the host does it every 20 s) so late joiners load fast
+routes['POST /collab/snapshot'] = async (req, res, body, me) => {
+  const cid = collabCid(body); const s = COLLAB.get(String(body.code || '').toUpperCase());
+  if (!cid || !s || !s.members.has(cid)) return fail(res, 404, 'gone');
+  const snap = JSON.stringify(body.state || {}); if (snap.length > 3500000) return fail(res, 400, 'Too big');
+  s.snapshot = snap; s.snapSeq = Math.min(Number(body.seq) || 0, s.seq);
+  send(res, 200, { ok: true });
+};
+routes['POST /collab/leave'] = async (req, res, body) => {
+  const cid = collabCid(body); const s = COLLAB.get(String(body.code || '').toUpperCase());
+  if (s && cid) { s.members.delete(cid); if (cid === s.host && body.close) COLLAB.delete(s.code); }
+  send(res, 200, { ok: true });
+};
+routes['POST /collab/lock'] = async (req, res, body) => {
+  const cid = collabCid(body); const s = COLLAB.get(String(body.code || '').toUpperCase());
+  if (!s || s.host !== cid) return fail(res, 403, 'Only the host can do that');
+  s.locked = !!body.locked; send(res, 200, { ok: true, locked: s.locked });
+};
+
 // ---------------- public Store (website /store): approved community capes + builds, no login needed to look ----------------
-const isListing = p => (p.type === 'cape' && p.image) || p.type === 'kycos';
+const isListing = p => (p.type === 'cape' && p.image) || p.type === 'kycos' || p.type === 'pack';
 db.lib = db.lib || {};       // uuid -> [item ids you own]
 db.coins = db.coins || {};   // uuid -> coins
 const owns = (u, id) => !!u && (db.lib[u] || []).includes(id);
 const storeOut = (p, me) => ({ id: p.id, type: p.type, title: p.title, name: nameOf(p.uuid), creator: nameOf(p.uuid), desc: p.desc || p.text || '',
   price: p.price || 0, photos: (p.photos || []).length, likes: p.likes.length, liked: !!me && p.likes.includes(me), slot: p.slot || (p.type === 'cape' ? 'cape' : ''),
   at: p.at, gif: p.image === 'gif', owned: owns(me, p.id) || p.uuid === me, owners: p.owners || 0, pending: !!p.pending,
+  items: p.type === 'pack' ? packItems(p).map(x => ({ id: x.id, type: x.type, title: x.title, slot: x.slot || (x.type === 'cape' ? 'cape' : ''), photos: (x.photos || []).length, gif: x.image === 'gif' })) : undefined,
+  worth: p.type === 'pack' ? packItems(p).reduce((a, x) => a + (x.price || 0), 0) : undefined,
   wearing: !!me && (p.type === 'cape' ? (db.cosmetics[me] || {}).capeItem === p.id && !!(db.cosmetics[me] || {}).hasCape : !!(db.kycos[me] && db.kycos[me].items && db.kycos[me].items[p.slot] === p.id)) });
+// a pack is a bundle of a creator's own items, sold together (usually cheaper than buying them one by one)
+function packItems(p) { return (p.items || []).map(id => H.posts.find(x => x.id === id && x.type !== 'pack' && isListing(x) && !x.pending)).filter(Boolean); }
 routes['GET /store/items'] = async (req, res, body, me) => {
   const sort = q(req).get('sort') || 'top';
   const mine = q(req).get('mine') === '1';
@@ -1094,14 +1286,20 @@ function imgKind(buf) {
 // Create a Store listing (website): name, description, price (coins, 0 = free), up to 4 photos, and either a .kycos build or a cape image.
 routes['POST /store/listing'] = async (req, res, body, me) => {
   if (isBanned(me)) return fail(res, 403, 'Banned');
-  const type = body.type === 'cape' ? 'cape' : 'kycos';
+  const type = body.type === 'cape' ? 'cape' : body.type === 'pack' ? 'pack' : 'kycos';
   const title = clean(body.name, 40), desc = clean(body.desc, 600);
   if (!title) return fail(res, 400, 'Give it a name');
   if (!checkText(res, me, title + ' ' + desc)) return;
   if (!isStaff(me) && slowmode(me + 'listing', 20000)) return fail(res, 429, 'Wait a few seconds between listings');
   const price = Math.max(0, Math.min(100000, Math.round(Number(body.price) || 0)));
   const post = { id: H.seq++, type, uuid: me, title, text: desc, desc, price, at: Date.now(), likes: [], owners: 0, photos: [] };
-  if (type === 'kycos') {
+  if (type === 'pack') {
+    const ids = [...new Set((Array.isArray(body.items) ? body.items : []).map(Number))].slice(0, 12);
+    const mine = ids.map(id => H.posts.find(x => x.id === id && x.type !== 'pack' && isListing(x) && x.uuid === me));
+    if (ids.length < 2 || mine.some(x => !x)) return fail(res, 400, 'A pack needs 2 to 12 of your own Store items');
+    if (mine.some(x => x.pending)) return fail(res, 400, 'Wait until every item in the pack is approved');
+    post.items = ids; post.slot = 'pack';
+  } else if (type === 'kycos') {
     const k = checkKycos(body.data);
     if (k.error) return fail(res, 400, k.error);
     post.data = k.json; post.slot = k.slot;
@@ -1128,14 +1326,16 @@ routes['POST /store/get'] = async (req, res, body, me) => {
   if (!p) return fail(res, 404, 'That item is gone');
   const lib = db.lib[me] = db.lib[me] || [];
   if (lib.includes(p.id) || p.uuid === me) return send(res, 200, { ok: true, owned: true, coins: db.coins[me] || 0 });
-  const price = p.price || 0;
+  // a pack only charges for what you don't own yet (never more than its price)
+  const price = p.type === 'pack' ? Math.min(p.price || 0, packItems(p).filter(x => !lib.includes(x.id) && x.uuid !== me).reduce((a, x) => a + (x.price || 0), 0)) : (p.price || 0);
   if (price > 0) {
     if ((db.coins[me] || 0) < price) return fail(res, 402, `You need ${price} coins (you have ${db.coins[me] || 0})`);
     db.coins[me] -= price;
     db.coins[p.uuid] = (db.coins[p.uuid] || 0) + Math.floor(price * 0.8); // the creator gets 80%
   }
   lib.push(p.id); p.owners = (p.owners || 0) + 1;
-  save(); send(res, 200, { ok: true, owned: true, coins: db.coins[me] || 0 });
+  if (p.type === 'pack') for (const x of packItems(p)) if (!lib.includes(x.id) && x.uuid !== me) { lib.push(x.id); x.owners = (x.owners || 0) + 1; }
+  save(); send(res, 200, { ok: true, owned: true, coins: db.coins[me] || 0, items: p.type === 'pack' ? packItems(p).length : undefined });
 };
 // Your Locker: everything you own, and what you're wearing.
 routes['GET /library'] = async (req, res, body, me) => {
@@ -1148,6 +1348,11 @@ routes['POST /library/wear'] = async (req, res, body, me) => {
   if (!p) return fail(res, 404, 'That item is gone');
   if (!owns(me, p.id) && p.uuid !== me) return fail(res, 403, 'Get it from the Store first');
   if (p.pending && p.uuid !== me) return fail(res, 403, 'Still waiting for approval');
+  const wearOne = x => {
+    if (x.type === 'kycos') { const k = db.kycos[me] || (db.kycos[me] = { slots: {}, version: 0 }); k.slots[x.slot] = JSON.parse(x.data); k.items = k.items || {}; k.items[x.slot] = x.id; k.version = Date.now(); }
+    else { const c = db.cosmetics[me] || (db.cosmetics[me] = { hasCape: false, capeType: 'png', accessory: 0 }); fs.copyFileSync(path.join(HUB_IMG, String(x.id)), path.join(CAPES, me.replace(/[^a-f0-9-]/g, ''))); c.hasCape = true; c.capeType = x.image === 'gif' ? 'gif' : 'png'; c.capeItem = x.id; c.version = Date.now(); }
+  };
+  if (p.type === 'pack') { const all = packItems(p); for (const x of all) wearOne(x); save(); return send(res, 200, { ok: true, slot: 'pack', worn: all.length }); }
   if (p.type === 'kycos') {
     const k = db.kycos[me] || (db.kycos[me] = { slots: {}, version: 0 });
     k.slots[p.slot] = JSON.parse(p.data); k.items = k.items || {}; k.items[p.slot] = p.id; k.version = Date.now();
@@ -1201,6 +1406,7 @@ function canPunish(res, me, u) {
 }
 function reportTarget(r) {
   if (r.kind === 'chat') { const m = H.chat.find(x => String(x.id) === String(r.id)); return m ? { name: m.uuid ? nameOf(m.uuid) : m.dname + ' (Discord)', text: m.text, chatImg: m.img || null, gone: false } : { gone: true }; }
+  if (r.kind === 'review') { const [ip, n] = String(r.id).split('|'); const sv = (H.servers || {})[ip]; const u = byName(n); const rv = sv && u && sv.reviews[u]; return rv ? { name: n, text: `${rv.stars}/5 on ${ip}: ${rv.text}`, gone: false } : { gone: true }; }
   if (r.kind === 'user' || r.kind === 'profile') { const u = byName(r.id); return { name: u ? nameOf(u) : r.id, text: u && db.profiles[u] ? (db.profiles[u].bio || '') : '', gone: !u }; }
   const p = H.posts.find(x => String(x.id) === String(r.id));
   return p ? { name: nameOf(p.uuid), text: [p.title, p.text].filter(Boolean).join(' - '), image: p.image ? p.id : null, type: p.type, gone: false } : { gone: true };
@@ -1234,7 +1440,11 @@ routes['POST /mod/approve'] = async (req, res, body, me) => {
 };
 routes['POST /mod/delete'] = async (req, res, body, me) => {
   if (!staffOnly(res, me)) return;
-  if (body.kind === 'chat') {
+  if (body.kind === 'review') {
+    const [ip, n] = String(body.id).split('|'); const sv = (H.servers || {})[ip], u = byName(n);
+    if (!sv || !u || !sv.reviews[u]) return fail(res, 404, 'Already gone');
+    delete sv.reviews[u]; audit(me, 'delete review', n, ip);
+  } else if (body.kind === 'chat') {
     const m = H.chat.find(x => String(x.id) === String(body.id)); if (!m) return fail(res, 404, 'Already gone');
     H.chat = H.chat.filter(x => x !== m); audit(me, 'delete chat', m.uuid ? nameOf(m.uuid) : m.dname + ' (Discord)', m.text || '[picture]');
     if (m.img) try { fs.unlinkSync(path.join(HUB_IMG, 'c' + m.img)); } catch (e) { /* gone */ }
@@ -1325,9 +1535,10 @@ const SITE_TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; cha
 function serveSite(req, res, pathname) {
   // pretty URLs: /edit, /u/<name>, /download, /features -> the single page app
   let rel = decodeURIComponent(pathname);
-  if (rel === '/' || /^\/(edit|mod|u\/[A-Za-z0-9_]{1,16}|download|features|profile|news|news\/[\w-]{1,40}|changelog|store|cosmetics|hub|studio)\/?$/.test(rel)) rel = '/index.html';
+  if (rel === '/' || /^\/(edit|mod|u\/[A-Za-z0-9_]{1,16}|download|features|profile|news|news\/[\w-]{1,40}|changelog|store|cosmetics|hub|hub\/(?:chat|dms|voice|lfg|servers|trades|mods)|rooms|studio|creators|leaderboards|skins|wishlist|invite|status|card|achievements|(?:creator|card|achievements|wishlist)\/[A-Za-z0-9_]{1,16})\/?$/.test(rel)) rel = '/index.html';
   if (/^\/overlay\/?$/.test(rel)) rel = '/overlay.html';
   if (/^\/builder\/?$/.test(rel)) rel = '/builder.html';
+  if (/^\/(build|timelapse)\/?$/.test(rel)) rel = '/build.html';
   const file = path.normalize(path.join(SITE, rel));
   if (!file.startsWith(SITE) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return false;
   const ext = path.extname(file).toLowerCase();
@@ -1343,6 +1554,14 @@ function serveSite(req, res, pathname) {
   res.writeHead(200, Object.assign(headers, { 'Content-Length': stat.size, 'Accept-Ranges': 'bytes' }));
   fs.createReadStream(file).pipe(res); return true;
 }
+
+// ---------------- social: trades, voice rooms, server reviews, LFG, polls, stickers, status, streaks, group DMs, reactions, pins, gifts ----------------
+const SOCIAL = require('./social')({ routes, db, H, send, fail, clean, nameOf, byName, list, areFriends, isStaff, isBanned, checkText, slowmode, save, q, imgKind,
+  HUB_IMG, DM_IMG, presence, isOnline, isOwnerUuid, isPlus, OWNERS, toDiscord, pushChat, isListing, PUBLIC_URL, readSigned });
+// ---------------- community: creators, themes, rooms, cards, leaderboards, achievements, skins, wishlist, referrals, status page ----------------
+const COMMUNITY = require('./community')({ routes, db, H, send, fail, clean, nameOf, byName, list, areFriends, isStaff, isBanned, checkText, slowmode, save, q,
+  presence, isOnline, isOwnerUuid, isPlus, isListing, storeOut, SOCIAL, DATA, SKINS, PUBLIC_URL, onlineCount, OWNERS,
+  discordInfo: () => ({ configured: !!(DISCORD_WEBHOOK || (DISCORD_BOT && DISCORD_CHANNEL)), lastError: DISCORD_BOT && DISCORD_CHANNEL ? discordState.lastError : '' }) });
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -1402,6 +1621,9 @@ const server = http.createServer(async (req, res) => {
       const out = Object.assign({ name: db.users[uuid].name, badges }, p);
       if (p.showLinks === false) out.links = [];
       if (p.discord && p.showDiscord !== false) out.discordName = p.discord.username; delete out.discord;
+      const cz = db.cosmetics[uuid] || {};
+      out.skinUrl = cz.hasSkin ? `/skin/${uuid}?v=${cz.skinVersion || 0}` : `/mcskin?name=${encodeURIComponent(db.users[uuid].name)}`; out.slim = !!cz.slim;
+      try { const L = COMMUNITY.levelOf(uuid); out.level = L.lvl; out.achievements = Object.keys(L.got).length; out.followers = L.s.followers; } catch (e) { /* stats are optional */ }
       return send(res, 200, out);
     }
     // Kyoto Blox -> your Roblox games: what someone is listening to + its synced lyrics (Kyoto Lyrics kit reads this)
@@ -1416,10 +1638,11 @@ const server = http.createServer(async (req, res) => {
     const key = `${req.method} ${url.pathname}`;
     const handler = routes[key];
     if (!handler) return fail(res, 404, 'not found');
-    const limit = key === 'PUT /profile/media' ? 22000000 : key === 'POST /store/listing' ? 16000000 : key === 'PUT /cosmetics' ? 6000000 : 2500000;
+    const limit = key === 'PUT /profile/media' ? 22000000 : key === 'POST /store/listing' ? 16000000 : key === 'PUT /cosmetics' ? 6000000 : key.startsWith('POST /collab/') ? 4000000 : key === 'POST /groups/image' || key === 'POST /chat/image' ? 4500000 : key === 'POST /skins/post' ? 400000 : 2500000;
     const body = (req.method === 'POST' || req.method === 'PUT') ? await readBody(req, limit) : {};
     const open = key === 'GET /' || key === 'GET /stats' || key.startsWith('POST /auth/') || key === 'POST /cosmetics/bulk'
-      || key === 'POST /blox/np' || key === 'POST /kofi' || key === 'GET /config' || key === 'GET /kycos' || key === 'GET /mcskin' || key === 'GET /store/items' || key === 'GET /store/image' || key === 'GET /store/kycos' || key === 'GET /store/item' || key === 'GET /store/photo' || key === 'GET /chat/img' || key === 'GET /chat' || key.startsWith('GET /cf/') || key === 'GET /link/discord/callback' || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version';
+      || key === 'POST /blox/np' || key === 'POST /kofi' || key === 'GET /config' || key === 'GET /kycos' || key === 'GET /mcskin' || key === 'GET /store/items' || key === 'GET /store/image' || key === 'GET /store/kycos' || key === 'GET /store/item' || key === 'GET /store/photo' || key === 'GET /chat/img' || key === 'GET /chat' || key.startsWith('GET /cf/') || key === 'GET /link/discord/callback' || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version' || key.startsWith('POST /collab/') || key === 'GET /servers' || key === 'GET /servers/one' || key === 'GET /lfg' || key === 'GET /voice' || key === 'GET /stickers'
+      || ['GET /creators', 'GET /creator', 'GET /card', 'GET /leaderboards', 'GET /achievements', 'GET /skins', 'GET /skins/png', 'GET /status/info'].includes(key);
     let me = null;
     if (!open) { me = auth(req); if (!me) return fail(res, 401, 'not logged in'); }
     else { try { me = auth(req); } catch (e) { me = null; } } // open routes: logged in is optional
@@ -1471,6 +1694,7 @@ function onWsMessage(me, op, data) {
 server.on('upgrade', (req, sock) => {
   try {
     const url = new URL(req.url, 'http://x');
+    if (url.pathname === '/voice') return SOCIAL.voiceUpgrade(req, sock, url);
     const t = db.tokens[url.searchParams.get('token') || ''];
     const key = req.headers['sec-websocket-key'];
     if (url.pathname !== '/ws' || !t || !key) { sock.end('HTTP/1.1 401 Unauthorized\r\n\r\n'); return; }

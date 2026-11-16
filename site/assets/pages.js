@@ -48,7 +48,17 @@
   });
   const needLogin = () => toast('Log in first', 'Type /kyoto link in game, then log in on the Edit profile page.');
   function setCoins(n) { if (n === null || n === undefined) return; coins = n; $('#cosCoins b').textContent = n.toLocaleString(); }
+  /* wishlist: heart anything you want, friends can gift from it */
+  let WISH = new Set(), wishLoaded = false;
+  async function loadWish() { if (!loggedIn() || wishLoaded) return; try { WISH = new Set((await api('/wishlist')).ids || []); wishLoaded = true; } catch (e) { /* later */ } }
+  async function toggleWish(id, el) {
+    if (!loggedIn()) return needLogin();
+    try { const r = await api('/wishlist/toggle', { method: 'POST', body: { id } }); r.on ? WISH.add(id) : WISH.delete(id); $$(`[data-wish="${id}"]`).forEach(b => b.classList.toggle('on', r.on)); toast(r.on ? 'On your wishlist' : 'Removed from your wishlist', r.on ? 'Friends can see it and gift it to you.' : ''); }
+    catch (e) { toast('Couldn\'t do that', e.message); }
+  }
+  const wishBtn = (i, big) => i.owned || i.pending ? '' : `<button class="wishbtn${big ? ' big' : ''}${WISH.has(i.id) ? ' on' : ''}" data-wish="${i.id}" title="Wishlist">${icon('heart')}${big ? `<span>${WISH.has(i.id) ? 'On your wishlist' : 'Add to wishlist'}</span>` : ''}</button>`;
   async function store() {
+    await loadWish();
     $('#storeGrid').innerHTML = Array.from({ length: 8 }, () => '<div class="scard skel"></div>').join('');
     try {
       const r = view === 'locker' ? await api('/library') : await api('/store/items?sort=' + sort);
@@ -58,12 +68,19 @@
   }
   const HEART = icon('heart');
   const priceTag = i => i.price > 0 ? `<span class="price paid">${icon('coin')}${i.price.toLocaleString()}</span>` : '<span class="price">Free</span>';
-  const slotName = s => ({ head: 'Head', back: 'Back', arm: 'Arm', leg: 'Leg', cape: 'Cape' }[s] || 'Cosmetic');
+  const slotName = s => ({ head: 'Head', back: 'Back', arm: 'Arm', leg: 'Leg', cape: 'Cape', pack: 'Pack' }[s] || 'Cosmetic');
+  /** A pack's picture: its items in a little grid (photo, cape face or 3D build). */
+  function packMini(x) {
+    if (x.photos > 0) return `<img class="sphoto" src="${CONFIG.api}/store/photo?id=${x.id}&n=0" alt="" loading="lazy">`;
+    return x.type === 'cape' ? `<div class="capeface" style="background-image:url('${CONFIG.api}/store/image?id=${x.id}')"></div>` : `<canvas data-kp="${x.id}"></canvas>`;
+  }
   function preview(i, big) {
+    if (i.type === 'pack' && !(i.photos > 0)) { const its = (i.items || []).slice(0, 4); return `<div class="pgrid n${its.length}">${its.map(x => `<div>${packMini(x)}</div>`).join('')}</div>`; }
     if (i.photos > 0) return `<img class="sphoto" src="${CONFIG.api}/store/photo?id=${i.id}&n=0" alt="" loading="lazy">`;
     return i.type === 'cape' ? `<div class="capeface${big ? ' big' : ''}" style="background-image:url('${CONFIG.api}/store/image?id=${i.id}')"></div>` : `<canvas data-kp="${i.id}"></canvas>`;
   }
   function action(i) {
+    if (i.type === 'pack' && (view === 'locker' || i.owned)) return `<button class="btn sm" data-wear="${i.id}">Wear all</button>`;
     if (view === 'locker' || i.owned) return i.wearing ? `<button class="btn sm ghost" data-off="${i.slot}">Take off</button>` : `<button class="btn sm" data-wear="${i.id}">Wear</button>`;
     return `<button class="btn sm glow" data-get="${i.id}">${i.price > 0 ? 'Buy' : 'Get'}</button>`;
   }
@@ -77,7 +94,7 @@
       return;
     }
     $('#storeGrid').innerHTML = list.map(i => `<article class="scard reveal${i.wearing ? ' wearing' : ''}" data-open="${i.id}">
-      <div class="sprev">${preview(i)}<span class="stype">${slotName(i.slot)}${i.gif ? ' · Animated' : ''}</span>${i.pending ? '<span class="spend">Waiting for approval</span>' : ''}${i.wearing ? '<span class="swear">Wearing</span>' : ''}</div>
+      <div class="sprev">${preview(i)}<span class="stype">${i.type === 'pack' ? `Pack · ${(i.items || []).length} items` : slotName(i.slot)}${i.gif ? ' · Animated' : ''}</span>${i.type === 'pack' && i.worth > i.price ? `<span class="ssave">Save ${Math.round((1 - i.price / i.worth) * 100)}%</span>` : ''}${i.pending ? '<span class="spend">Waiting for approval</span>' : ''}${i.wearing ? '<span class="swear">Wearing</span>' : ''}${view === 'locker' ? '' : wishBtn(i)}</div>
       <div class="sbody"><b>${esc(i.title || 'Untitled')}</b><span class="muted">by ${esc(i.creator)} · ${HEART}${i.likes}</span></div>
       <div class="sacts">${i.owned && view !== 'locker' ? '<span class="price own">Owned</span>' : priceTag(i)}${action(i)}</div></article>`).join('');
     $$('[data-kp]').forEach(c => api('/store/kycos?id=' + c.dataset.kp, { auth: false }).then(r => { try { drawKycos(c, JSON.parse(r.data)); } catch (e) { /* bad file */ } }).catch(() => {}));
@@ -89,6 +106,7 @@
     $$('[data-get]', root).forEach(b => b.onclick = () => getItem(b, Number(b.dataset.get)));
     $$('[data-wear]', root).forEach(b => b.onclick = () => wearItem(b, Number(b.dataset.wear)));
     $$('[data-off]', root).forEach(b => b.onclick = () => takeOff(b, b.dataset.off));
+    $$('[data-wish]', root).forEach(b => b.onclick = e => { e.stopPropagation(); toggleWish(Number(b.dataset.wish), b); });
   }
   async function getItem(b, id) {
     if (!loggedIn()) return needLogin();
@@ -107,6 +125,7 @@
     b.disabled = true;
     try {
       const r = await api('/library/wear', { method: 'POST', body: { id } });
+      if (r.slot === 'pack') { toast('Wearing the whole pack', `${r.worn} items on. It shows in game within a minute.`); closeItem(); return store(); }
       items.forEach(x => { if (x.slot === r.slot) x.wearing = x.id === id; });
       toast('You\'re wearing it', 'It shows in game within a minute. Press F5 to see yourself.');
       closeItem(); renderStore();
@@ -124,7 +143,8 @@
   modal.onclick = e => { if (e.target === modal || e.target.closest('[data-x]')) closeItem(); };
   function closeItem() { modal.hidden = true; document.body.classList.remove('menu-open'); }
   async function openItem(id) {
-    let i = items.find(x => x.id === id);
+    await loadWish();
+    let i = items.find(x => x.id === id) || {};
     try { i = Object.assign({}, i, await api('/store/item?id=' + id)); if (i.wearing === undefined) i.wearing = (items.find(x => x.id === id) || {}).wearing; } catch (e) { /* use what we have */ }
     const shots = [];
     for (let n = 0; n < i.photos; n++) shots.push(`${CONFIG.api}/store/photo?id=${i.id}&n=${n}`);
@@ -134,27 +154,33 @@
       <div class="cinfo"><span class="eyebrow">${slotName(i.slot)}${i.gif ? ' · Animated' : ''}</span><h2>${esc(i.title)}</h2>
         <div class="cby"><img src="https://mc-heads.net/avatar/${encodeURIComponent(i.creator)}/32" alt=""><span>by <a href="/u/${encodeURIComponent(i.creator)}" data-link>${esc(i.creator)}</a></span></div>
         <p class="cdesc">${esc(i.desc || 'No description.').replace(/\n/g, '<br>')}</p>
+        ${i.type === 'pack' ? `<div class="pitems"><b>In this pack</b>${(i.items || []).map(x => `<button class="pitem" data-pi="${x.id}"><span class="pthumb">${packMini(x)}</span><span>${esc(x.title)}<small>${slotName(x.slot)}</small></span></button>`).join('')}${i.worth > i.price ? `<p class="muted small">Worth ${i.worth.toLocaleString()} coins on their own${i.price ? `, you save ${(i.worth - i.price).toLocaleString()}` : ''}. You only pay for what you don't own yet.</p>` : ''}</div>` : ''}
         <div class="cstats"><span>${HEART} ${i.likes} likes</span><span>${icon('users')} ${i.owners || 0} own it</span></div>
         <div class="cbuy">${i.owned ? '<span class="price own big">In your Locker</span>' : priceTag(i)}${action(i)}</div>
+        ${loggedIn() && i.type !== 'pack' && !i.pending ? `<div class="cgift"><button class="btn sm ghost" data-gift="buy">${icon('gift')} Gift to a friend</button>${i.owned && i.creator !== ((JSON.parse(localStorage.getItem('kyoto.me') || 'null') || {}).name) ? `<button class="btn sm ghost" data-gift="give">${icon('swap')} Give mine away</button>` : ''}${wishBtn(i, true)}</div>` : ''}
         <p class="muted small">Wear it in game from <b>Cosmetics &gt; Locker</b>, or right here. Every Kyoto player sees it.</p></div></div>`;
     $$('.cthumbs img', modal).forEach(t => t.onclick = () => { $$('.cthumbs img, .cthumb-r', modal).forEach(x => x.classList.remove('on')); t.classList.add('on'); $('.cmain', modal).innerHTML = `<img src="${t.src}" alt="">`; });
     const raw = $('[data-raw]', modal); if (raw) raw.onclick = () => { $$('.cthumbs img', modal).forEach(x => x.classList.remove('on')); raw.classList.add('on'); $('.cmain', modal).innerHTML = preview(Object.assign({}, i, { photos: 0 }), true); drawIn(modal, i); };
     drawIn(modal, i);
+    $$('[data-pi]', modal).forEach(b => b.onclick = () => openItem(Number(b.dataset.pi)));
+    $$('[data-gift]', modal).forEach(b => b.onclick = () => giftDialog(i, b.dataset.gift));
     wireButtons(modal);
     modal.hidden = false; document.body.classList.add('menu-open');
   }
   function drawIn(root, i) {
-    $$('canvas', root).forEach(c => api('/store/kycos?id=' + i.id, { auth: false }).then(r => drawKycos(c, JSON.parse(r.data))).catch(() => {}));
+    $$('canvas[data-kp]', root).forEach(c => api('/store/kycos?id=' + c.dataset.kp, { auth: false }).then(r => drawKycos(c, JSON.parse(r.data))).catch(() => {}));
+    if (i.type !== 'pack') $$('canvas:not([data-kp])', root).forEach(c => api('/store/kycos?id=' + i.id, { auth: false }).then(r => drawKycos(c, JSON.parse(r.data))).catch(() => {}));
   }
   /* post a cosmetic */
   $('#cosSell').onclick = () => {
     if (!loggedIn()) return needLogin();
     modal.innerHTML = `<div class="cbox sell"><button class="cx" data-x>${icon('x')}</button><form id="sellForm">
       <span class="eyebrow">Post a cosmetic</span><h2>Put it in the Kyoto Store</h2>
-      <div class="seg" id="sType"><button type="button" class="on" data-t="kycos">Cosmetic (.kycos)</button><button type="button" data-t="cape">Cape</button></div>
+      <div class="seg" id="sType"><button type="button" class="on" data-t="kycos">Cosmetic (.kycos)</button><button type="button" data-t="cape">Cape</button><button type="button" data-t="pack">Pack</button></div>
       <label class="fld"><span>Name</span><input name="name" maxlength="40" required placeholder="Sakura Crown"></label>
       <label class="fld"><span>Description</span><textarea name="desc" maxlength="600" rows="3" placeholder="What it is, how it moves, what it goes well with..."></textarea></label>
       <div class="fld"><span>Price</span><div class="pricebox"><button type="button" class="on" data-p="free">Free</button><button type="button" data-p="coins">Coins</button><input name="price" type="number" min="1" max="100000" placeholder="100" hidden></div></div>
+      <div class="fld" id="sPack" hidden><span>Pick 2 to 12 of your Store items</span><div class="ppick" id="sPick"><p class="muted small">Loading your items…</p></div><p class="muted small" id="sWorth"></p></div>
       <label class="fld drop" id="sFile"><span id="sFileLbl">Your .kycos file (export it from Kyoto Studio)</span><input type="file" name="file" accept=".kycos,application/json" required><b id="sFileName">Choose file</b></label>
       <label class="fld drop"><span>Photos (up to 4): show it in game, from the front and back</span><input type="file" name="photos" accept="image/*" multiple><b id="sPhotoName">Choose photos</b></label>
       <div class="sthumbs" id="sThumbs"></div>
@@ -165,7 +191,26 @@
       t = b.dataset.t; $$('[data-t]', modal).forEach(x => x.classList.toggle('on', x === b));
       $('#sFileLbl').textContent = t === 'cape' ? 'Your cape (PNG or GIF in cape layout)' : 'Your .kycos file (export it from Kyoto Studio)';
       f.file.accept = t === 'cape' ? 'image/png,image/gif' : '.kycos,application/json'; f.file.value = ''; $('#sFileName').textContent = 'Choose file'; $('#sCapeNote').hidden = t !== 'cape';
+      $('#sFile').hidden = t === 'pack'; f.file.required = t !== 'pack'; $('#sPack').hidden = t !== 'pack';
+      if (t === 'pack') loadPick();
     });
+    const picked = new Set(); let mine = [];
+    async function loadPick() {
+      try {
+        const me = JSON.parse(localStorage.getItem('kyoto.me') || 'null');
+        const r = await api('/library');
+        mine = (r.items || []).filter(x => x.type !== 'pack' && !x.pending && (!me || x.creator === me.name));
+        if (!mine.length) { $('#sPick').innerHTML = '<p class="muted small">Post at least 2 cosmetics or capes first, then bundle them here.</p>'; return; }
+        $('#sPick').innerHTML = mine.map(x => `<button type="button" class="pitem${picked.has(x.id) ? ' on' : ''}" data-pk="${x.id}"><span class="pthumb">${packMini(x)}</span><span>${esc(x.title)}<small>${slotName(x.slot)} · ${x.price ? x.price + ' coins' : 'Free'}</small></span></button>`).join('');
+        $$('[data-pk]', modal).forEach(b => b.onclick = () => { const id = Number(b.dataset.pk); if (picked.has(id)) picked.delete(id); else if (picked.size < 12) picked.add(id); b.classList.toggle('on', picked.has(id)); worth(); });
+        $$('#sPick canvas[data-kp]', modal).forEach(c => api('/store/kycos?id=' + c.dataset.kp, { auth: false }).then(r2 => drawKycos(c, JSON.parse(r2.data))).catch(() => {}));
+        worth();
+      } catch (e) { $('#sPick').innerHTML = `<p class="muted small">${esc(e.message)}</p>`; }
+    }
+    function worth() {
+      const w = mine.filter(x => picked.has(x.id)).reduce((a, x) => a + (x.price || 0), 0);
+      $('#sWorth').textContent = picked.size ? `${picked.size} picked · worth ${w.toLocaleString()} coins on their own${w ? ` (try ${Math.round(w * .7).toLocaleString()} for a 30% deal)` : ''}` : '';
+    }
     $$('[data-p]', modal).forEach(b => b.onclick = () => { paid = b.dataset.p === 'coins'; $$('[data-p]', modal).forEach(x => x.classList.toggle('on', x === b)); f.price.hidden = !paid; });
     f.file.onchange = () => { $('#sFileName').textContent = f.file.files[0] ? f.file.files[0].name : 'Choose file'; };
     f.photos.onchange = () => {
@@ -175,9 +220,10 @@
     f.onsubmit = async e => {
       e.preventDefault(); const go = $('#sGo'); go.disabled = true; go.textContent = 'Posting…';
       try {
-        const file = f.file.files[0]; if (!file) throw new Error(t === 'cape' ? 'Pick your cape' : 'Pick your .kycos file');
+        const file = f.file.files[0]; if (!file && t !== 'pack') throw new Error(t === 'cape' ? 'Pick your cape' : 'Pick your .kycos file');
+        if (t === 'pack' && picked.size < 2) throw new Error('Pick at least 2 items for the pack');
         const body = { type: t, name: f.name.value.trim(), desc: f.desc.value.trim(), price: paid ? Number(f.price.value) || 0 : 0, photos: [] };
-        if (t === 'cape') body.image = await b64(file); else body.data = await file.text();
+        if (t === 'pack') body.items = [...picked]; else if (t === 'cape') body.image = await b64(file); else body.data = await file.text();
         for (const ph of [...f.photos.files].slice(0, 4)) body.photos.push(await b64(await shrink(ph)));
         const r = await api('/store/listing', { method: 'POST', body });
         closeItem(); toast(r.pending ? 'Sent for approval' : 'It\'s live!', r.pending ? 'A Kyoto mod checks it soon. It\'s already in your Locker.' : 'It\'s in the Store now.');
@@ -216,6 +262,45 @@
     }
   }
 
+  /* ---------------- shared item pictures (Hub trades + gifts use these) ---------------- */
+  const KYC = new Map();
+  window.KY_ITEMS = {
+    thumb: x => x.photos > 0 ? `<img class="ithumb" src="${CONFIG.api}/store/photo?id=${x.id}&n=0" alt="" loading="lazy">` : x.type === 'cape' ? `<div class="capeface" style="background-image:url('${CONFIG.api}/store/image?id=${x.id}')"></div>` : `<canvas data-kp3="${x.id}"></canvas>`,
+    draw: root => $$('canvas[data-kp3]', root).forEach(c => {
+      const id = c.dataset.kp3; const go = d => { try { drawKycos(c, d); } catch (e) { /* bad file */ } };
+      if (KYC.has(id)) return go(KYC.get(id));
+      api('/store/kycos?id=' + id, { auth: false }).then(r => { const d = JSON.parse(r.data); KYC.set(id, d); go(d); }).catch(() => {});
+    }),
+    gift: (item, mode) => giftDialog(item, mode),
+    open: id => openItem(id),
+    card: (i, extra = '') => `<article class="scard" data-open="${i.id}"><div class="sprev">${preview(i)}<span class="stype">${i.type === 'pack' ? 'Pack' : slotName(i.slot)}</span>${wishBtn(i)}</div>
+      <div class="sbody"><b>${esc(i.title || 'Untitled')}</b><span class="muted">by ${esc(i.creator)} · ${HEART}${i.likes}</span></div><div class="sacts">${i.owned ? '<span class="price own">Owned</span>' : priceTag(i)}${extra}</div></article>`,
+    wire: root => { $$('canvas[data-kp]', root).forEach(c => api('/store/kycos?id=' + c.dataset.kp, { auth: false }).then(r => { try { drawKycos(c, JSON.parse(r.data)); } catch (e) { /* bad */ } }).catch(() => {})); wireButtons(root); $$('[data-open]', root).forEach(c => c.onclick = e => { if (!e.target.closest('button')) openItem(Number(c.dataset.open)); }); },
+    loadWish: async () => { wishLoaded = false; await loadWish(); return WISH; }
+  };
+  /* ---------------- gifts: buy something for a friend, or give away one you own ---------------- */
+  async function giftDialog(item, mode) {
+    if (!loggedIn()) return needLogin();
+    let friends = [];
+    try { friends = (await api('/friends')).friends || []; } catch (e) { return toast('Couldn\'t load your friends', e.message); }
+    if (!friends.length) return toast('No friends yet', 'Add friends in game (/kyoto friends) to send gifts.');
+    const box = document.createElement('div'); box.className = 'cmodal';
+    let pick = null;
+    box.innerHTML = `<div class="cbox sell gift"><button class="cx" data-x>${icon('x')}</button><span class="eyebrow">${icon('gift')} ${mode === 'give' ? 'Give it away' : 'Send a gift'}</span>
+      <h2>${esc(item.title)}</h2><p class="muted">${mode === 'give' ? 'It moves from your Locker to theirs.' : item.price > 0 ? `You pay ${item.price.toLocaleString()} coins, they get it in their Locker.` : 'It\'s free: they get it in their Locker.'}</p>
+      <div class="gfriends">${friends.map(f => `<button type="button" class="gf" data-gf="${esc(f.name)}"><img src="https://mc-heads.net/avatar/${encodeURIComponent(f.name)}/32" alt=""><span>${esc(f.name)}</span>${f.online ? '<i class="on"></i>' : ''}</button>`).join('')}</div>
+      <label class="fld"><span>Note (optional)</span><input id="gNote" maxlength="140" placeholder="Happy birthday!"></label>
+      <button class="btn glow wide" id="gGo" disabled>${icon('gift')} Send gift</button></div>`;
+    document.body.appendChild(box);
+    box.onclick = e => { if (e.target === box || e.target.closest('[data-x]')) box.remove(); };
+    $$('[data-gf]', box).forEach(b => b.onclick = () => { pick = b.dataset.gf; $$('[data-gf]', box).forEach(x => x.classList.toggle('on', x === b)); $('#gGo', box).disabled = false; $('#gGo', box).innerHTML = `${icon('gift')} Send to ${esc(pick)}`; });
+    $('#gGo', box).onclick = async () => {
+      const b = $('#gGo', box); b.disabled = true;
+      try { const r = await api('/gift', { method: 'POST', body: { to: pick, id: item.id, mode, note: $('#gNote', box).value.trim() } }); setCoins(r.coins); box.remove(); toast('Gift sent', `${pick} got ${item.title}.`); if (mode === 'give') store(); }
+      catch (e) { b.disabled = false; toast('Couldn\'t send it', e.message); }
+    };
+  }
+
   /* ---------------- Download ---------------- */
   function download() {
     api('/version', { auth: false }).then(r => { if (r && r.mc) $('#dlMc').textContent = r.mc; }).catch(() => {});
@@ -231,7 +316,9 @@
   };
   // first load straight onto one of these pages
   const p = location.pathname;
-  const m = /^\/(news|changelog|store|cosmetics|download|studio|hub)(\/|$)/.exec(p);
+  const m = /^\/(news|changelog|store|cosmetics|download|studio|hub|rooms)(\/|$)/.exec(p);
+  const itemQ = new URLSearchParams(location.search).get('item'); if (itemQ && m && /store|cosmetics/.test(m[1])) setTimeout(() => openItem(Number(itemQ)), 900);
   if (/[?&]sell=1/.test(location.search)) setTimeout(() => $('#cosSell') && $('#cosSell').click(), 400);
-  if (m) setTimeout(() => window.openPage({ changelog: 'news', cosmetics: 'store' }[m[1]] || m[1], p), 0);
+  if (/[?&]pack=1/.test(location.search)) setTimeout(() => { if ($('#cosSell')) { $('#cosSell').click(); const pb = $('[data-t="pack"]'); if (pb) pb.click(); } }, 400);
+  if (m) setTimeout(() => window.openPage({ changelog: 'news', cosmetics: 'store', rooms: 'hub' }[m[1]] || m[1], p), 0);
 })();

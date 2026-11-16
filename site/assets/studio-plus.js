@@ -47,13 +47,13 @@
   }
   function transform(fn) {
     const ks = K(), S = ks.S; if (!S.vox.size) return ks.toast('Nothing to move yet', 'Place some voxels first.');
-    ks.pushUndo(); const out = new Map(); let lost = 0;
+    ks.pushUndo(); const out = new Map(), parts = new Map(); let lost = 0;
     for (const [k, c] of S.vox) {
       const p = fn(k.split(',').map(Number));
       if (p.some((v, i) => v < 0 || v >= S.n[i])) { lost++; continue; }
-      out.set(ks.key(...p), c);
+      const nk = ks.key(...p); out.set(nk, c); if (S.part && S.part.get(k)) parts.set(nk, S.part.get(k));
     }
-    S.vox = out; ks.changed();
+    S.vox = out; if (S.part) S.part = parts; ks.changed();
     if (lost) ks.toast(lost + ' voxels fell off the edge', 'Ctrl+Z to undo, or make the build space bigger.', 'bad');
   }
   function recolour() {
@@ -189,6 +189,7 @@
       <h4>Photos <small>(click to leave one out)</small></h4>
       <div class="shots" id="pShots">${shots.map((s, i) => `<button class="shot on" data-shot="${i}"><img src="${s.url}" alt=""><span>${s.n}</span></button>`).join('')}</div>
       <label class="dropbtn sm"><input type="file" id="pOwn" accept="image/*" multiple hidden><span id="pOwnName">+ Add your own in-game screenshots</span></label>
+      <p class="note">Made a few things? Bundle them into a <a href="${(HOOKS.server || '')}/store?pack=1" target="_blank">cosmetic pack</a> on the Store and sell them together.</p>
       <p class="note" id="pMsg"></p><div class="mrow"><button class="pri ghost" data-close>Cancel</button><button class="pri" id="pGo">Post it</button></div>`);
     let paid = false, own = [];
     $$('[data-pp]').forEach(b => b.onclick = () => { paid = b.dataset.pp === 'coins'; $$('[data-pp]').forEach(x => x.classList.toggle('on', x === b)); $('#pCoins').hidden = !paid; });

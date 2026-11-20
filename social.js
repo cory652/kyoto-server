@@ -674,13 +674,13 @@ module.exports = function social(ctx) {
     const r = { id, name: String(name).slice(0, 40), host, privacy: ['public', 'friends', 'invite'].includes(privacy) ? privacy : 'public', lfg: lfg || null, members: new Map(), created: now(), emptySince: now(), topic: '' };
     VR.set(id, r); return r;
   }
-  const canSeeRoom = (r, me) => r.privacy === 'public' || r.host === me || areFriends(r.host, me) && r.privacy === 'friends' || [...r.members.values()].some(m => m.uuid === me) || isStaff(me)
+  const canSeeRoom = (r, me) => !!r.server || r.privacy === 'public' || r.host === me || areFriends(r.host, me) && r.privacy === 'friends' || [...r.members.values()].some(m => m.uuid === me) || isStaff(me)
     || (r.lfg && H.lfg.some(p => p.id === r.lfg && (p.uuid === me || p.members.includes(me)))) || Object.values(H.groups).some(g => g.voice === r.id && g.members.includes(me));
   const roomOut = (r, me) => ({ id: r.id, name: r.name, topic: r.topic, host: nameOf(r.host), privacy: r.privacy, lfg: r.lfg, mine: r.host === me, size: r.members.size, max: 16,
     members: [...r.members.values()].map(m => ({ slot: m.slot, name: nameOf(m.uuid), muted: m.muted, deaf: m.deaf, speaking: m.speaking && now() - m.spokeAt < 1500, host: m.uuid === r.host, client: m.client })) });
   setInterval(() => { for (const [id, r] of VR) if (!r.members.size && now() - r.emptySince > (r.lfg ? 30 : 3) * 60000) VR.delete(id); }, 30000).unref();
   routes['GET /voice'] = async (req, res, body, me) => {
-    const l = [...VR.values()].filter(r => !me ? r.privacy === 'public' : canSeeRoom(r, me)).filter(r => r.members.size || r.host === me || r.privacy !== 'invite')
+    const l = [...VR.values()].filter(r => !me ? r.privacy === 'public' : canSeeRoom(r, me)).filter(r => !r.server).filter(r => r.members.size || r.host === me || r.privacy !== 'invite')
       .sort((a, b) => b.members.size - a.members.size || b.created - a.created).map(r => roomOut(r, me));
     send(res, 200, { rooms: l });
   };
@@ -775,5 +775,13 @@ module.exports = function social(ctx) {
     const tk = setInterval(() => { if (sock.destroyed) return clearInterval(tk); if (m.speaking && now() - m.spokeAt > 600) { m.speaking = false; broadcastRoom(r); } }, 300);
   }
 
-  return { voiceUpgrade, STICKERS, REACTIONS, statusOf, streakOf, touchStreak, note, voiceCount: () => VR.size };
+  /** Proximity voice: one room per Minecraft server. The game turns people up/down by how far away they are. */
+  function serverVoiceRoom(host, me) {
+    host = String(host || '').toLowerCase().replace(/[^a-z0-9.\-:]/g, '').slice(0, 60);
+    if (!host) return null;
+    for (const r of VR.values()) if (r.server === host && r.members.size < 16) return r.id;
+    const r = makeVoiceRoom(me, host + ' (nearby voice)', 'public'); r.server = host; r.topic = 'Proximity voice: people near you in game are louder';
+    return r.id;
+  }
+  return { voiceUpgrade, serverVoiceRoom, STICKERS, REACTIONS, statusOf, streakOf, touchStreak, note, voiceCount: () => VR.size };
 };

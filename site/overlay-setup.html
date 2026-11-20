@@ -42,6 +42,8 @@
   .btn { padding: 11px 18px; border-radius: 999px; border: 0; background: linear-gradient(135deg, #fff, #ffc2e5); color: #12081f; font: 700 14px Poppins; cursor: pointer; white-space: nowrap; } .btn.ghost { background: rgba(255,255,255,.06); color: #fff; border: 1px solid var(--line); }
   .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; } .steps div { padding: 16px; border-radius: 16px; background: rgba(16,14,24,.8); border: 1px solid var(--line); } .steps b { display: block; font: 700 14px Poppins; margin-bottom: 4px; } .steps p { margin: 0; color: var(--mut); font-size: 12.5px; line-height: 1.5; } .steps code { color: #fff; }
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); padding: 12px 18px; border-radius: 14px; background: #1a1626; border: 1px solid var(--line); font-weight: 600; opacity: 0; transition: opacity .3s; } .toast.on { opacity: 1; }
+  .keybox { padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,.04); border: 1px solid var(--line); margin: 0 0 14px; font-size: 12.5px; color: #c9ccd4; line-height: 1.5; } .keybox b { color: #fff; } .keybox a { color: #ff8fd0; } .keybox button { margin-top: 8px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: none; color: #fff; font: 600 12px Inter; cursor: pointer; }
+  [hidden] { display: none !important; }
   @media (max-width: 1000px) { main { grid-template-columns: 1fr; } .panel { position: static; } .steps { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -57,6 +59,26 @@
       <button data-m="bar"><b>Lower bar</b><span>Scrolling ticker along the bottom</span></button>
       <button data-m="qr"><b>QR code</b><span>"Scan to get Kyoto"</span></button>
       <button data-m="scene"><b>Full scene</b><span>Starting soon / BRB / Ending</span></button>
+    </div>
+    <h3>Live from your game</h3><p class="hint">These show your real numbers while you play (DonutSMP, lifesteal, Hypixel, practice...). Turn on <b>Live Stats For Overlays</b> in the Kyoto menu (Streaming page).</p>
+    <div class="modes" id="modes2">
+      <button data-m="challenge"><b>Money challenge</b><span>"2xing my money" with a goal bar</span></button>
+      <button data-m="stats"><b>Live stats</b><span>Balance, per hour, kills, bounty...</span></button>
+      <button data-m="alerts"><b>Game alerts</b><span>Bounty on you, deaths, AH sold</span></button>
+      <button data-m="counter"><b>Counter</b><span>One big number: deaths, kills...</span></button>
+    </div>
+    <div id="optLive" hidden>
+      <div class="keybox" id="keybox"></div>
+      <div id="optChal">
+        <div class="two"><label class="f">Start amount<input id="cStart" placeholder="1m" value="1m"></label><label class="f">Goal<input id="cGoal" placeholder="2m" value="2m"></label></div>
+        <div class="seg" id="quick" style="margin:-6px 0 14px"><button data-x="2">2x</button><button data-x="3">3x</button><button data-x="5">5x</button><button data-x="10">10x</button></div>
+        <label class="f">Title<input id="cTitle" maxlength="40" placeholder="2xing my money"></label>
+        <label class="f">Count<select id="cFrom"><option value="balance">My balance (from the scoreboard)</option><option value="session">Money made this stream</option></select></label>
+      </div>
+      <div id="optStats"><label class="f">Show</label><div class="seg" id="statPick" style="margin:-6px 0 14px"></div></div>
+      <div id="optCounter"><div class="two"><label class="f">Count<select id="cWhat"><option value="deaths">Deaths</option><option value="kills">Kills</option><option value="money">Balance</option><option value="session">Made this stream</option><option value="perhour">Money / hour</option><option value="bounty">Bounty on me</option><option value="shards">Shards</option><option value="hearts">Hearts</option><option value="elo">Elo</option></select></label>
+        <label class="f">Label (optional)<input id="cLabel" maxlength="30" placeholder="Deaths today"></label></div></div>
+      <div id="optAlerts"><label class="f">Pop up for</label><div class="seg" id="evPick" style="margin:-6px 0 14px"></div></div>
     </div>
     <div id="optScene" hidden>
       <div class="two"><label class="f">Scene<select id="scene"><option value="start">Starting soon</option><option value="brb">Be right back</option><option value="end">Ending</option></select></label>
@@ -96,6 +118,22 @@ const POS_V = [['top', 'Top'], ['mid', 'Middle'], ['bottom', 'Above comments'], 
 let POS = POS_H;
 const THEMES = [['sakura', 'linear-gradient(135deg,#ff8fd0,#a98bff,#8fd8ff)'], ['night', 'linear-gradient(135deg,#7c9bff,#6a5cff,#8fe7ff)'], ['sunset', 'linear-gradient(135deg,#ffb05c,#ff5d8f,#ffd36b)'], ['mint', 'linear-gradient(135deg,#6dffc0,#45d8ff,#b8ffdf)'], ['mono', 'linear-gradient(135deg,#fff,#b9bcc6)']];
 const SLIDES = [['brand', 'Playing on Kyoto'], ['get', 'Get it (QR)'], ['live', 'Players online'], ['feature', 'Features'], ['me', 'My level card'], ['studio', 'Kyoto Studio'], ['launcher', 'Kyoto Launcher']];
+const STATS = [['money', 'Balance'], ['session', 'This stream'], ['perhour', 'Per hour'], ['shards', 'Shards'], ['kills', 'Kills'], ['deaths', 'Deaths'], ['bounty', 'Bounty'], ['hearts', 'Hearts'], ['elo', 'Elo']];
+const EVENTS = [['bounty', 'Bounty on me'], ['death', 'Deaths'], ['kill', 'Kills'], ['sold', 'AH sold'], ['order', 'Order filled']];
+S.stats = ['money', 'session', 'perhour', 'kills', 'deaths', 'bounty']; S.events = EVENTS.map(e => e[0]); S.key = '';
+const LIVE_MODES = ['challenge', 'stats', 'alerts', 'counter'];
+async function loadKey(fresh) {
+  const tok = localStorage.getItem('kyoto.token');
+  if (!tok) { $('#keybox').innerHTML = 'You need to <a href="/edit">log in on the Kyoto website</a> first (same account as the mod), then come back here.'; return; }
+  try {
+    const r = await fetch(fresh ? '/overlay/key/new' : '/overlay/key', { method: fresh ? 'POST' : 'GET', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: fresh ? '{}' : undefined });
+    if (r.status === 401) { localStorage.removeItem('kyoto.token'); return loadKey(); }
+    const j = await r.json(); S.key = j.key || '';
+    $('#keybox').innerHTML = `Linked to <b>${(j.name || '').replace(/[<>&]/g, '')}</b>. Your overlay key is already in the link below. It only shows these game numbers, never your login.<br><button id="newKey">Make a new key</button> <span style="opacity:.7">(old links stop working)</span>`;
+    $('#newKey').onclick = () => loadKey(true);
+    update();
+  } catch (e) { $('#keybox').textContent = 'Could not reach the Kyoto server. Try again in a minute.'; }
+}
 const BGS = ['starry', 'spring', 'summer', 'fall', 'winter', 'christmas'];
 function drawPos() { POS = S.orient === 'v' ? POS_V : POS_H; if (!POS.some(p => p[0] === S.pos)) S.pos = POS[0][0];
   $('#pos').innerHTML = POS.map(([k, n]) => `<button data-p="${k}" class="${S.pos === k ? 'on' : ''}">${n}</button>`).join('');
@@ -109,6 +147,13 @@ function build() {
   if (S.mode === 'scene') { p.set('scene', $('#scene').value); if (Number($('#timer').value)) p.set('timer', $('#timer').value); if ($('#title').value.trim()) p.set('title', $('#title').value.trim()); }
   else if (S.mode !== 'bar') p.set('pos', S.pos);
   if (S.mode === 'pop') { p.set('every', $('#every').value); p.set('show', $('#show').value); if (S.slides.length && S.slides.length < SLIDES.length) p.set('slides', S.slides.join(',')); }
+  if (LIVE_MODES.includes(S.mode)) {
+    if (S.key) p.set('k', S.key);
+    if (S.mode === 'challenge') { p.set('start', $('#cStart').value.trim() || '0'); p.set('goal', $('#cGoal').value.trim() || '0'); if ($('#cTitle').value.trim()) p.set('title', $('#cTitle').value.trim()); if ($('#cFrom').value === 'session') p.set('from', 'session'); }
+    if (S.mode === 'stats' && S.stats.length) p.set('show', S.stats.join(','));
+    if (S.mode === 'counter') { p.set('what', $('#cWhat').value); if ($('#cLabel').value.trim()) p.set('label', $('#cLabel').value.trim()); }
+    if (S.mode === 'alerts' && S.events.length < EVENTS.length) p.set('events', S.events.join(','));
+  }
   const n = $('#name').value.trim(); if (/^[A-Za-z0-9_]{2,16}$/.test(n)) p.set('name', n);
   if ($('#scale').value !== '1') p.set('scale', $('#scale').value);
   if (S.theme !== 'sakura') p.set('theme', S.theme);
@@ -118,10 +163,13 @@ function build() {
 let t;
 function update() {
   $('#optScene').hidden = S.mode !== 'scene'; $('#optPos').hidden = S.mode === 'scene' || S.mode === 'bar'; $('#optPop').hidden = S.mode !== 'pop';
+  const live = LIVE_MODES.includes(S.mode); $('#optLive').hidden = !live;
+  $('#optChal').hidden = S.mode !== 'challenge'; $('#optStats').hidden = S.mode !== 'stats'; $('#optCounter').hidden = S.mode !== 'counter'; $('#optAlerts').hidden = S.mode !== 'alerts';
+  if (live && !S.keyAsked) { S.keyAsked = true; loadKey(); }
   const u = build(); $('#url').value = 'Making your link…';
   shortLink(u);
   // preview: pop-ups show right away and stay up
-  clearTimeout(t); t = setTimeout(() => { $('#pv').src = u.replace('/overlay?', '/overlay?') + (S.mode === 'pop' ? '&every=0' : ''); }, 250);
+  clearTimeout(t); t = setTimeout(() => { $('#pv').src = u.replace('/overlay?', '/overlay?') + (S.mode === 'pop' ? '&every=0' : '') + (LIVE_MODES.includes(S.mode) ? '&demo=1' : ''); }, 250);
 }
 let shortT, shortN = 0;
 function shortLink(long) {
@@ -142,6 +190,12 @@ function fit() {
 }
 addEventListener('resize', fit); fit();
 $$('[data-m]').forEach(b => b.onclick = () => { S.mode = b.dataset.m; $$('[data-m]').forEach(x => x.classList.toggle('on', x === b)); update(); });
+$('#statPick').innerHTML = STATS.map(([k, n]) => `<button data-st="${k}" class="${S.stats.includes(k) ? 'on' : ''}">${n}</button>`).join('');
+$('#evPick').innerHTML = EVENTS.map(([k, n]) => `<button data-ev="${k}" class="on">${n}</button>`).join('');
+$$('[data-st]').forEach(b => b.onclick = () => { const k = b.dataset.st; S.stats = S.stats.includes(k) ? S.stats.filter(x => x !== k) : S.stats.concat(k).slice(-6); $$('[data-st]').forEach(x => x.classList.toggle('on', S.stats.includes(x.dataset.st))); update(); });
+$$('[data-ev]').forEach(b => b.onclick = () => { const k = b.dataset.ev; S.events = S.events.includes(k) ? S.events.filter(x => x !== k) : S.events.concat(k); if (!S.events.length) S.events = [k]; $$('[data-ev]').forEach(x => x.classList.toggle('on', S.events.includes(x.dataset.ev))); update(); });
+$$('[data-x]').forEach(b => b.onclick = () => { const m = /^\s*([\d.]+)\s*([kmb]?)/i.exec($('#cStart').value) || ['', '1', 'm']; const v = parseFloat(m[1]) * Number(b.dataset.x); $('#cGoal').value = String(Math.round(v * 100) / 100) + (m[2] || ''); if (!$('#cTitle').value.trim() || /^\d+xing my money$/.test($('#cTitle').value.trim())) $('#cTitle').value = b.dataset.x + 'xing my money'; update(); });
+['cStart', 'cGoal', 'cTitle', 'cLabel'].forEach(id => $('#' + id).addEventListener('input', update)); ['cFrom', 'cWhat'].forEach(id => $('#' + id).addEventListener('change', update));
 $$('[data-o]').forEach(b => b.onclick = () => { S.orient = b.dataset.o; $$('[data-o]').forEach(x => x.classList.toggle('on', x === b)); drawPos(); fit(); update(); });
 $('#guides').onchange = () => $('#stage').classList.toggle('guides', $('#guides').checked);
 $$('[data-t]').forEach(b => b.onclick = () => { S.theme = b.dataset.t; $$('[data-t]').forEach(x => x.classList.toggle('on', x === b)); update(); });

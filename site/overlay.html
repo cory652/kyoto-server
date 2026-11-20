@@ -12,6 +12,11 @@
         bar     lower-third bar with a scrolling ticker
         scene   full screen: Starting soon / BRB / Ending (use with ?scene=start|brb|end&timer=5)
         qr      just the "scan to get Kyoto" card
+  Live game overlays (need ?k=<overlay key> from the setup page + "Live Stats For Overlays" on in Kyoto):
+        challenge  money goal, e.g. 2xing: &start=1m&goal=2m&title=2xing my money (&from=session counts money made)
+        stats      live server stats card (&show=money,session,perhour,kills,deaths,bounty)
+        alerts     big pop-ups for bounty on you, deaths, kills, AH sold, orders filled (&events=bounty,death)
+        counter    one big number (&what=deaths|kills|money|session|perhour|bounty|shards|hearts|elo&label=Deaths today)
   Vertical streams (TikTok LIVE, Shorts): add ?layout=vertical and make the Browser Source 1080 x 1920.
     It keeps clear of TikTok's top bar, side buttons and the comments. pos=top|mid|bottom (+ tl/tr/bl/br)
   ?pos=br|bl|tr|tl|bottom|top   ?scale=1 (0.5-2)   ?every=45 (seconds between pop-ups, 0 = always up)   ?show=14
@@ -185,6 +190,45 @@
   .vert .scene .fslot { height: 128px; } .vert .scene .fslot b { font-size: 32px; }
   .vert .scene .livec .num { font-size: 76px; }
   .vert .scene .ticker { bottom: 70px; }
+
+  /* ============ LIVE GAME OVERLAYS (need ?k=overlay key from the setup page) ============ */
+  .money { font-variant-numeric: tabular-nums; }
+  .chal { width: 760px; padding: 26px 32px 28px; border-radius: 34px; animation: badgeIn 1s var(--pop) both; }
+  .chal .chead { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .chal .ttl { font: 800 34px/1.1 Poppins; letter-spacing: -.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chal .mult { flex: none; padding: 8px 16px; border-radius: 16px; font: 900 30px/1 Poppins; color: var(--ink); background: linear-gradient(135deg, #fff, var(--a)); box-shadow: 0 8px 26px color-mix(in srgb, var(--a) 55%, transparent); }
+  .chal .now { display: flex; align-items: baseline; gap: 14px; margin-top: 10px; }
+  .chal .now b { font: 900 78px/1 Poppins; letter-spacing: -2px; }
+  .chal .now span { font: 700 22px Poppins; color: rgba(255,255,255,.75); }
+  .chal .now .up { color: #6ef0b0; } .chal .now .down { color: #ff7a93; }
+  .track2 { position: relative; height: 30px; margin-top: 18px; border-radius: 999px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); overflow: hidden; }
+  .track2 .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: inherit; background: linear-gradient(90deg, var(--b), var(--a), var(--c)); background-size: 200% 100%; animation: shimmer 3s linear infinite; transition: width 1.4s var(--ease); box-shadow: 0 0 30px color-mix(in srgb, var(--a) 70%, transparent); }
+  .track2 .fill::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(115deg, rgba(255,255,255,.18) 0 14px, transparent 14px 28px); animation: stripes 1.2s linear infinite; }
+  @keyframes stripes { to { background-position: 60px 0; } }
+  .track2 .pct { position: absolute; inset: 0; display: grid; place-items: center; font: 800 16px Poppins; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  .chal .ends { display: flex; justify-content: space-between; margin-top: 10px; font: 700 18px Poppins; color: rgba(255,255,255,.8); } .chal .ends b { color: #fff; }
+  .chal .meta { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; } .chal .meta span { padding: 6px 13px; border-radius: 999px; font: 600 14px Poppins; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.13); display: inline-flex; gap: 7px; align-items: center; } .chal .meta svg { width: 15px; height: 15px; color: var(--a); }
+  .chal.won .ttl::after { content: ' — DONE!'; color: #6ef0b0; }
+  .wait { font: 600 16px Poppins; color: rgba(255,255,255,.6); margin-top: 6px; display: flex; align-items: center; gap: 8px; }
+  .stats2 { width: 560px; padding: 22px 26px 24px; border-radius: 30px; animation: badgeIn 1s var(--pop) both; }
+  .stats2 .hd { display: flex; align-items: center; gap: 12px; } .stats2 .hd img { width: 46px; height: 46px; border-radius: 12px; image-rendering: pixelated; }
+  .stats2 .hd b { display: block; font: 800 24px/1.1 Poppins; } .stats2 .hd span { font: 600 14px Poppins; color: rgba(255,255,255,.7); display: flex; align-items: center; gap: 7px; }
+  .stats2 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+  .stats2 .cell { padding: 12px 14px; border-radius: 18px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); transition: background .4s, transform .5s var(--pop); }
+  .stats2 .cell.bump { background: color-mix(in srgb, var(--a) 22%, rgba(255,255,255,.06)); transform: scale(1.04); }
+  .stats2 .cell small { display: flex; align-items: center; gap: 7px; font: 700 12px Poppins; letter-spacing: .14em; text-transform: uppercase; color: rgba(255,255,255,.65); } .stats2 .cell small svg { width: 14px; height: 14px; color: var(--a); }
+  .stats2 .cell b { display: block; font: 800 30px/1.15 Poppins; margin-top: 4px; }
+  .stats2 .cell b.g { color: #6ef0b0; } .stats2 .cell b.r { color: #ff7a93; }
+  .alert2 { width: 820px; height: 150px; display: grid; grid-template-columns: 130px 1fr; align-items: center; gap: 22px; padding: 0 30px 0 18px; border-radius: 34px; opacity: 0; transform: translateY(40px) scale(.8); filter: blur(10px); transition: opacity .5s, transform .9s var(--pop), filter .5s; }
+  .alert2.on { opacity: 1; transform: none; filter: none; } .alert2.out { opacity: 0; transform: translateY(-20px) scale(.95); filter: blur(6px); transition-duration: .4s; }
+  .alert2 .ai { width: 118px; height: 118px; border-radius: 30px; display: grid; place-items: center; background: linear-gradient(145deg, rgba(255,255,255,.16), rgba(255,255,255,.03)); border: 1px solid rgba(255,255,255,.14); } .alert2 .ai svg { width: 60px; height: 60px; animation: float 3s ease-in-out infinite; }
+  .alert2 small { font: 700 15px Poppins; letter-spacing: .18em; text-transform: uppercase; color: var(--a); } .alert2 b { display: block; font: 800 38px/1.15 Poppins; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .alert2.bad small { color: #ff7a93; } .alert2.good small { color: #6ef0b0; }
+  .counter2 { min-width: 320px; display: flex; align-items: center; gap: 18px; padding: 16px 28px 16px 16px; border-radius: 28px; animation: badgeIn 1s var(--pop) both; }
+  .counter2 .ci { width: 74px; height: 74px; border-radius: 20px; display: grid; place-items: center; background: linear-gradient(145deg, color-mix(in srgb, var(--a) 40%, transparent), color-mix(in srgb, var(--b) 25%, transparent)); border: 1px solid rgba(255,255,255,.18); } .counter2 .ci svg { width: 38px; height: 38px; }
+  .counter2 small { font: 700 14px Poppins; letter-spacing: .16em; text-transform: uppercase; color: rgba(255,255,255,.72); } .counter2 b { display: block; font: 900 54px/1 Poppins; letter-spacing: -1px; margin-top: 2px; }
+  .counter2 b.pulse { animation: pulse .7s var(--pop); } @keyframes pulse { 40% { transform: scale(1.18); color: var(--a); } }
+  .vert .chal { width: 820px; } .vert .stats2 { width: 800px; } .vert .alert2 { width: 820px; }
 </style>
 </head>
 <body>
@@ -232,7 +276,15 @@ const I = {
   trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8M9 17h6"/>',
   sparkle: '<path d="M12 3c.6 4.2 2.8 6.4 7 7-4.2.6-6.4 2.8-7 7-.6-4.2-2.8-6.4-7-7 4.2-.6 6.4-2.8 7-7z"/>',
   box: '<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M12 12 20 7.5M12 12 4 7.5M12 12v9"/>',
-  windows: '<path d="M3 5.5 10.5 4.5v7H3zM12 4.3 21 3v8.5h-9zM3 12.5h7.5v7L3 18.5zM12 12.5h9V21l-9-1.3z"/>'
+  windows: '<path d="M3 5.5 10.5 4.5v7H3zM12 4.3 21 3v8.5h-9zM3 12.5h7.5v7L3 18.5zM12 12.5h9V21l-9-1.3z"/>',
+  coin: '<circle cx="12" cy="12" r="8.5"/><path d="M14.8 9.2c-.5-1-1.6-1.6-2.8-1.6-1.6 0-2.8.9-2.8 2.1 0 2.8 5.8 1.5 5.8 4.4 0 1.2-1.3 2.2-3 2.2-1.3 0-2.4-.6-2.9-1.6M12 6v1.6M12 16.4V18"/>',
+  skull: '<path d="M12 3.5c-4.4 0-7.5 3-7.5 7 0 2.4 1.1 4 2.5 5v3h10v-3c1.4-1 2.5-2.6 2.5-5 0-4-3.1-7-7.5-7z"/><circle cx="9" cy="11" r="1.6"/><circle cx="15" cy="11" r="1.6"/><path d="M10 18.5v2M14 18.5v2"/>',
+  sword: '<path d="M14.5 3.5H20.5V9.5L10 20 4 14z"/><path d="m7 13 4 4M3.5 20.5l3-3"/>',
+  target: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/>',
+  heart: '<path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.6 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  gem: '<path d="M6 4h12l3 5-9 11L3 9z"/><path d="M3 9h18M9 4l3 16 3-16"/>',
+  up: '<path d="M4 17l6-6 4 4 6-7"/><path d="M14 8h6v6"/>'
 };
 const ic = (n, c = 'ic') => `<svg class="${c}" viewBox="0 0 24 24">${I[n] || I.sparkle}</svg>`;
 const FEATURES = [
@@ -414,7 +466,133 @@ function scene() {
   }
 }
 
-({ pop, badge, bar, qr: qrCard, scene }[MODE] || pop)();
+
+/* ================= live game overlays: money challenge, stats, alerts, counters =================
+   They read what Kyoto Client sends while you play (turn on "Live Stats For Overlays" in the Kyoto menu).
+   ?k=<overlay key> from the setup page. It only unlocks these numbers, nothing else. */
+const KEY = /^[\w-]{8,20}$/.test(Q.get('k') || '') ? Q.get('k') : '';
+const LV = { on: false, d: null, since: 0, subs: [] };
+const short = n => { n = Number(n) || 0; const a = Math.abs(n), sg = n < 0 ? '-' : '';
+  for (const [v, u] of [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']]) if (a >= v) return sg + (a / v).toFixed(a / v >= 100 ? 0 : a / v >= 10 ? 1 : 2).replace(/\.?0+$/, '') + u;
+  return sg + Math.round(a).toLocaleString('en-US'); };
+const parseAmt = s => { const m = /^\s*([\d.,]+)\s*([kmbt]?)\s*$/i.exec(String(s || '')); if (!m) return 0; return parseFloat(m[1].replace(/,/g, '')) * ({ k: 1e3, m: 1e6, b: 1e9, t: 1e12 }[m[2].toLowerCase()] || 1); };
+async function pollLive() {
+  if (!KEY) return;
+  try {
+    const r = await get('/overlay/live?k=' + encodeURIComponent(KEY) + '&since=' + LV.since);
+    LV.on = !!r.on; LV.name = r.name || LV.name;
+    if (r.on) { LV.d = r; if (r.events && r.events.length) { LV.since = Math.max(...r.events.map(e => e.at)); if (LV.first) r.events.forEach(e => LV.subs.forEach(f => f(e))); } }
+    LV.first = true;
+    document.dispatchEvent(new Event('ky:live'));
+  } catch (e) { /* server asleep */ }
+}
+if (KEY && Q.get('demo') !== '1') { pollLive(); setInterval(pollLive, 3000); }
+else if (Q.get('demo') === '1') { // preview on the setup page: pretend numbers
+  const st = parseAmt(Q.get('start')) || 1e6, d = { on: true, server: 'DonutSMP', money: st * 1.38, session: st * .38, perHour: st * .21, shards: 1240, kills: 7, deaths: 2, bounty: 2.5e6, hearts: 14, elo: 1312 };
+  LV.on = true; LV.d = d; LV.name = NAME || 'heffm'; let n = 0;
+  setTimeout(() => document.dispatchEvent(new Event('ky:live')), 60);
+  setInterval(() => { n++; d.money += st * .02; d.session += st * .02; if (n % 3 === 0) d.kills++; document.dispatchEvent(new Event('ky:live'));
+    if (n % 4 === 1) { const ev = [{ type: 'bounty', text: '$2.5M bounty on me!' }, { type: 'sold', text: 'Elytra for $1.2M' }, { type: 'kill', text: 'Killed Notch' }, { type: 'death', text: 'Killed by jeb_' }][(n / 4 | 0) % 4]; LV.subs.forEach(f => f(ev)); } }, 2500);
+}
+// smooth number tween
+function tweenNum(el, to, f = short) { const from = Number(el.dataset.v ?? to), t0 = performance.now(), dur = 1200; el.dataset.v = to;
+  if (from === to) { el.textContent = f(to); return; }
+  (function s(t) { const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3); el.textContent = f(from + (to - from) * e); if (k < 1) requestAnimationFrame(s); })(t0); }
+const waitLine = () => KEY ? `<div class="wait"><span class="dot"></span>Waiting for the game... turn on <b>&nbsp;Live Stats For Overlays&nbsp;</b> in Kyoto</div>` : `<div class="wait">Add your overlay key from kyoto-server.onrender.com/overlay/setup</div>`;
+
+/* ---- money challenge: "2xing my money" from START to GOAL ---- */
+function challenge() {
+  const from = Q.get('from') === 'session' ? 'session' : 'balance';
+  const START = parseAmt(Q.get('start')), GOAL = parseAmt(Q.get('goal')) || (START ? START * 2 : 0);
+  const TITLE = Q.get('title') || (START && GOAL && Math.abs(GOAL / START - 2) < .01 ? '2xing my money' : 'Money challenge');
+  const UNIT = (Q.get('unit') || '$').slice(0, 3);
+  const anchor = document.createElement('div'); anchor.className = 'anchor ' + POS;
+  anchor.innerHTML = `<div class="sc">${shell('chal', `<div class="chead"><div class="ttl grad-text">${esc(TITLE)}</div><div class="mult" id="mult">x1.00</div></div>
+    <div class="now"><b class="money" id="now">${UNIT}0</b><span id="delta"></span></div>
+    <div class="track2"><div class="fill" id="fill"></div><div class="pct" id="pct">0%</div></div>
+    <div class="ends"><span>Start <b>${UNIT}${short(START)}</b></span><span>Goal <b>${UNIT}${short(GOAL)}</b></span></div>
+    <div class="meta" id="meta"></div>`, 30)}</div>`;
+  $('#root').appendChild(anchor); wireStars(anchor);
+  const card = $('.chal'); let won = false;
+  const draw = () => {
+    const d = LV.d;
+    if (!LV.on || !d) { $('#meta').innerHTML = waitLine(); return; }
+    const cur = from === 'session' ? START + Math.max(0, d.session) : d.money >= 0 ? d.money : START + Math.max(0, d.session);
+    tweenNum($('#now'), cur, v => UNIT + short(v));
+    const p = GOAL > START ? Math.max(0, Math.min(1, (cur - START) / (GOAL - START))) : 0;
+    $('#fill').style.width = (p * 100).toFixed(1) + '%'; $('#pct').textContent = Math.floor(p * 100) + '%';
+    $('#mult').textContent = 'x' + (START > 0 ? (cur / START).toFixed(2) : '1.00');
+    const dl = cur - START; $('#delta').innerHTML = `<span class="${dl >= 0 ? 'up' : 'down'}">${dl >= 0 ? '+' : ''}${UNIT}${short(dl)}</span>`;
+    const left = GOAL - cur, eta = d.perHour > 0 && left > 0 ? left / d.perHour : 0;
+    $('#meta').innerHTML = [d.perHour > 0 ? `<span>${ic('up')}${UNIT}${short(d.perHour)} / hour</span>` : '', eta ? `<span>${ic('clock')}~${eta < 1 ? Math.max(1, Math.round(eta * 60)) + ' min' : eta.toFixed(1) + ' h'} to go</span>` : '', left > 0 ? `<span>${ic('target')}${UNIT}${short(left)} left</span>` : '', d.server ? `<span>${ic('home')}${esc(d.server)}</span>` : ''].join('');
+    if (p >= 1 && !won) { won = true; card.classList.add('won'); burst($('.sc', anchor)); setTimeout(() => burst($('.sc', anchor)), 600); }
+    if (p < 1) { won = false; card.classList.remove('won'); }
+  };
+  draw(); document.addEventListener('ky:live', draw);
+}
+
+/* ---- live stats card ---- */
+function statsCard() {
+  const anchor = document.createElement('div'); anchor.className = 'anchor ' + POS;
+  anchor.innerHTML = `<div class="sc">${shell('stats2', `<div class="hd"><img id="hd" alt="" src="${LOGO}"><div><b class="grad-text" id="who">Kyoto Client</b><span id="srv"><span class="dot"></span>Live stats</span></div></div><div class="grid" id="grid"></div>`, 24)}</div>`;
+  $('#root').appendChild(anchor); wireStars(anchor);
+  const want = (Q.get('show') && isNaN(Number(Q.get('show'))) ? Q.get('show') : '').split(',').filter(Boolean);
+  const prev = {};
+  const draw = () => {
+    const d = LV.d;
+    if (LV.name && LV.name !== '?') { $('#who').textContent = LV.name; $('#hd').src = 'https://mc-heads.net/avatar/' + encodeURIComponent(LV.name) + '/46'; }
+    if (!LV.on || !d) { $('#grid').innerHTML = `<div style="grid-column:1/-1">${waitLine()}</div>`; return; }
+    $('#srv').innerHTML = `<span class="dot g"></span>${esc(d.server || 'Playing')}`;
+    const all = { money: ['coin', 'Balance', d.money >= 0 ? '$' + short(d.money) : null], session: ['up', 'This stream', d.session !== -1 ? (d.session >= 0 ? '+$' : '-$') + short(Math.abs(d.session)) : null, d.session >= 0 ? 'g' : 'r'], perhour: ['clock', 'Per hour', d.perHour > 0 ? '$' + short(d.perHour) : null],
+      shards: ['gem', 'Shards', d.shards >= 0 ? short(d.shards) : null], kills: ['sword', 'Kills', d.kills >= 0 ? String(d.kills) : null], deaths: ['skull', 'Deaths', d.deaths >= 0 ? String(d.deaths) : null, 'r'],
+      bounty: ['target', 'Bounty on me', d.bounty > 0 ? '$' + short(d.bounty) : null], hearts: ['heart', 'Hearts', d.hearts > 0 ? String(d.hearts) : null], elo: ['trophy', 'Elo', d.elo > 0 ? String(Math.round(d.elo)) : null] };
+    const keys = (want.length ? want : Object.keys(all)).filter(k => all[k] && all[k][2] != null).slice(0, 6);
+    $('#grid').innerHTML = keys.map(k => `<div class="cell${prev[k] !== undefined && prev[k] !== all[k][2] ? ' bump' : ''}"><small>${ic(all[k][0])}${all[k][1]}</small><b class="money ${all[k][3] || ''}">${esc(all[k][2])}</b></div>`).join('');
+    keys.forEach(k => prev[k] = all[k][2]);
+    setTimeout(() => document.querySelectorAll('.cell.bump').forEach(c => c.classList.remove('bump')), 900);
+  };
+  draw(); document.addEventListener('ky:live', draw);
+}
+
+/* ---- big pop-up alerts from game events ---- */
+function alerts() {
+  const anchor = document.createElement('div'); anchor.className = 'anchor ' + POS;
+  anchor.innerHTML = `<div class="sc">${shell('alert2', `<div class="ai" id="ai"></div><div><small id="ak"></small><b id="at"></b></div>`, 26)}</div>`;
+  $('#root').appendChild(anchor); wireStars(anchor);
+  const card = $('.alert2'), queue = []; let busy = false;
+  const STYLE = { bounty: ['target', 'Bounty on you', 'bad'], death: ['skull', 'Died', 'bad'], kill: ['sword', 'Kill', 'good'], sold: ['coin', 'Sold', 'good'], order: ['coin', 'Order filled', 'good'], pay: ['coin', 'Got paid', 'good'], money: ['up', 'Money', 'good'], goal: ['trophy', 'Goal hit', 'good'] };
+  const only = (Q.get('events') || '').split(',').filter(Boolean);
+  async function run() {
+    if (busy) return; busy = true;
+    while (queue.length) {
+      const e = queue.shift(), st = STYLE[e.type] || ['sparkle', e.type, ''];
+      card.className = 'shell alert2 ' + st[2]; $('#ai').innerHTML = ic(st[0]); $('#ak').textContent = st[1]; $('#at').textContent = e.text || '';
+      await wait(30); card.classList.add('on'); setTimeout(() => burst($('.sc', anchor)), 300);
+      await wait(Math.max(3, Number(Q.get('hold')) || 5) * 1000); card.classList.add('out'); card.classList.remove('on'); await wait(600);
+    }
+    busy = false;
+  }
+  LV.subs.push(e => { if (only.length && !only.includes(e.type)) return; if (queue.length < 6) queue.push(e); run(); });
+  if (Q.get('test') === '1') setTimeout(() => LV.subs.forEach(f => f({ type: 'bounty', text: '$2.5M bounty on you!' })), 1500);
+}
+
+/* ---- one big counter: deaths, kills, money, bounty, session ---- */
+function counter() {
+  const what = (Q.get('what') || 'deaths').toLowerCase();
+  const M = { deaths: ['skull', 'Deaths', d => d.deaths, String], kills: ['sword', 'Kills', d => d.kills, String], money: ['coin', 'Balance', d => d.money, v => '$' + short(v)], session: ['up', 'Made this stream', d => d.session, v => '+$' + short(v)],
+    perhour: ['clock', 'Money / hour', d => d.perHour, v => '$' + short(v)], bounty: ['target', 'Bounty on me', d => d.bounty, v => '$' + short(v)], shards: ['gem', 'Shards', d => d.shards, short], hearts: ['heart', 'Hearts', d => d.hearts, String], elo: ['trophy', 'Elo', d => d.elo, v => String(Math.round(v))] }[what] || null;
+  if (!M) return;
+  const label = Q.get('label') || M[1];
+  const anchor = document.createElement('div'); anchor.className = 'anchor ' + POS;
+  anchor.innerHTML = `<div class="sc">${shell('counter2', `<div class="ci">${ic(M[0])}</div><div><small>${esc(label)}</small><b class="money grad-text" id="cv">—</b></div>`, 16)}</div>`;
+  $('#root').appendChild(anchor); wireStars(anchor);
+  let last = null;
+  const draw = () => { if (!LV.on || !LV.d) return; const v = Math.max(0, M[2](LV.d)); const el = $('#cv'); tweenNum(el, v, M[3]);
+    if (last !== null && v !== last) { el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse'); } last = v; };
+  draw(); document.addEventListener('ky:live', draw);
+}
+
+({ pop, badge, bar, qr: qrCard, scene, challenge, stats: statsCard, alerts, counter }[MODE] || pop)();
 </script>
 </body>
 </html>

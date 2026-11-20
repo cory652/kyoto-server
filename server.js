@@ -831,6 +831,98 @@ function isAdmin(req, res) {
   }
   adminFails.delete(ip); return true;
 }
+// ---------------- server packs (patterns the mod reads, so wording fixes don't need a mod update) ----------------
+const PACK_IDS = ['donut', 'hypixel', 'lifesteal', 'practice', 'mcc', 'smp'];
+routes['POST /packs/set'] = async (req, res, body) => {
+  if (!isAdmin(req, res)) return;
+  const id = String(body.id || '');
+  if (!PACK_IDS.includes(id)) return fail(res, 400, 'Unknown pack');
+  db.packs = db.packs || {};
+  const out = {};
+  if (body.patterns && typeof body.patterns === 'object') { out.patterns = {}; for (const [k, v] of Object.entries(body.patterns).slice(0, 200)) { try { new RegExp(String(v)); out.patterns[String(k).slice(0, 40)] = String(v).slice(0, 400); } catch (e) { return fail(res, 400, 'Bad regex for ' + k); } } }
+  if (Array.isArray(body.disallow)) out.disallow = body.disallow.slice(0, 50).map(x => String(x).slice(0, 40));
+  if (Array.isArray(body.suggest)) out.suggest = body.suggest.slice(0, 20).map(a => (Array.isArray(a) ? a : []).slice(0, 3).map(x => String(x).slice(0, 200)));
+  db.packs[id] = out; save();
+  send(res, 200, { ok: true });
+};
+routes['POST /packs/suggest'] = async (req, res, body, me) => {
+  const pack = String(body.pack || '').slice(0, 20), text = String(body.text || '').trim().slice(0, 500);
+  if (!text) return fail(res, 400, 'Write something');
+  db.packSuggest = db.packSuggest || [];
+  if (db.packSuggest.filter(x => x.u === me && Date.now() - x.at < 3600000).length >= 10) return fail(res, 429, 'Slow down');
+  db.packSuggest.push({ u: me, name: nameOf(me), pack, text, at: Date.now() });
+  if (db.packSuggest.length > 2000) db.packSuggest.splice(0, db.packSuggest.length - 2000);
+  save(); send(res, 200, { ok: true });
+};
+routes['GET /packs/suggestions'] = async (req, res) => { if (!isAdmin(req, res)) return; send(res, 200, (db.packSuggest || []).slice(-300).reverse()); };
+
+// ---------------- Hypixel player stats (HYPIXEL_API_KEY lives only in Render env) ----------------
+const HYPIXEL_KEY = process.env.HYPIXEL_API_KEY || '';
+const HYP_CACHE = new Map(); // lower name -> { at, data }
+const HYP_RATE = new Map();  // uuid -> [times]
+routes['GET /hypixel/player'] = async (req, res, body, me) => {
+  const name = String(q(req).get('name') || '');
+  if (!/^[A-Za-z0-9_]{2,16}$/.test(name)) return fail(res, 400, 'Bad name');
+  if (!HYPIXEL_KEY) return send(res, 200, { error: 'Stats are off on this server' });
+  const k = name.toLowerCase(), c = HYP_CACHE.get(k);
+  if (c && Date.now() - c.at < 10 * 60000) return send(res, 200, c.data);
+  const t = (HYP_RATE.get(me) || []).filter(x => Date.now() - x < 60000);
+  if (t.length >= 40) return fail(res, 429, 'Slow down'); t.push(Date.now()); HYP_RATE.set(me, t);
+  try {
+    const mr = await fetch('https://api.mojang.com/users/profiles/minecraft/' + encodeURIComponent(name));
+    if (mr.status !== 200) { const d = { name, nick: true }; HYP_CACHE.set(k, { at: Date.now(), data: d }); return send(res, 200, d); }
+    const mj = await mr.json();
+    const hr = await fetch('https://api.hypixel.net/v2/player?uuid=' + mj.id, { headers: { 'API-Key': HYPIXEL_KEY } });
+    const hj = await hr.json();
+    const p = hj.player || {}, st = p.stats || {}, bw = st.Bedwars || {}, sw = st.SkyWars || {}, du = st.Duels || {};
+    const r2 = (a, b) => Math.round((a || 0) / Math.max(1, b || 0) * 100) / 100;
+    const data = {
+      name: mj.name, rank: p.newPackageRank || p.packageRank || '', plus: p.monthlyPackageRank === 'SUPERSTAR',
+      level: p.networkExp ? Math.round((Math.sqrt(2 * p.networkExp + 30625) / 50 - 2.5) * 10) / 10 : 0,
+      bw_star: (p.achievements || {}).bedwars_level || 0, bw_fkdr: r2(bw.final_kills_bedwars, bw.final_deaths_bedwars), bw_wins: bw.wins_bedwars || 0, bw_wlr: r2(bw.wins_bedwars, bw.losses_bedwars), bw_ws: bw.winstreak ?? null,
+      sw_star: Number(String(sw.levelFormatted || '').replace(/\D/g, '')) || 0, sw_kdr: r2(sw.kills, sw.deaths), sw_wins: sw.wins || 0,
+      duels_wins: du.wins || 0, duels_wlr: r2(du.wins, du.losses), duels_ws: du.current_winstreak ?? null,
+    };
+    if (HYP_CACHE.size > 5000) HYP_CACHE.clear();
+    HYP_CACHE.set(k, { at: Date.now(), data });
+    send(res, 200, data);
+  } catch (e) { send(res, 200, { error: 'Hypixel did not answer' }); }
+};
+
+// ---------------- live stats for stream overlays (the mod posts, the overlay reads with an overlay key) ----------------
+// The overlay key only unlocks these game numbers. It is NOT your login or stream token, and you can make a new one any time.
+const LIVE = new Map(); // uuid -> { at, data, events: [] }
+function ovKeyOf(u) {
+  const user = db.users[u]; if (!user) return '';
+  if (!user.ovKey) { user.ovKey = crypto.randomBytes(9).toString('base64url'); save(); }
+  return user.ovKey;
+}
+function userByOvKey(k) {
+  if (!/^[\w-]{8,20}$/.test(k || '')) return null;
+  for (const [u, user] of Object.entries(db.users)) if (user.ovKey === k) return u;
+  return null;
+}
+routes['POST /overlay/live'] = async (req, res, body, me) => {
+  const n = v => (typeof v === 'number' && isFinite(v) ? Math.round(v * 100) / 100 : -1);
+  const s = v => String(v == null ? '' : v).replace(/[§\u0000-\u001f]/g, '').slice(0, 60);
+  const prev = LIVE.get(me) || { events: [] };
+  const data = { server: s(body.server), pack: s(body.pack), money: n(body.money), session: n(body.session), perHour: n(body.perHour), shards: n(body.shards), kills: n(body.kills), deaths: n(body.deaths), bounty: n(body.bounty), hearts: n(body.hearts), elo: n(body.elo) };
+  const evs = Array.isArray(body.events) ? body.events.slice(0, 20).map(e => ({ type: s(e && e.type).slice(0, 20), text: s(e && e.text).slice(0, 120), at: Date.now() })) : [];
+  const events = prev.events.concat(evs).filter(e => Date.now() - e.at < 120000).slice(-30);
+  LIVE.set(me, { at: Date.now(), data, events });
+  send(res, 200, { ok: true });
+};
+routes['GET /overlay/key'] = async (req, res, body, me) => send(res, 200, { key: ovKeyOf(me), name: nameOf(me) });
+routes['POST /overlay/key/new'] = async (req, res, body, me) => { if (db.users[me]) { db.users[me].ovKey = ''; } send(res, 200, { key: ovKeyOf(me) }); };
+routes['GET /overlay/live'] = async (req, res) => {
+  const u = userByOvKey(q(req).get('k'));
+  if (!u) return send(res, 200, { on: false, error: 'bad key' });
+  const e = LIVE.get(u);
+  const since = Number(q(req).get('since')) || 0;
+  if (!e || Date.now() - e.at > 60000) return send(res, 200, { on: false, name: nameOf(u) });
+  send(res, 200, { on: true, name: nameOf(u), ...e.data, events: e.events.filter(x => x.at > since), now: Date.now() });
+};
+
 const NEWS_TAGS = ['Update', 'News', 'Event', 'Cosmetics', 'Fix', 'Sneak peek'];
 routes['GET /news'] = async (req, res) => {
   const list = db.news.slice().sort((a, b) => (b.pinned - a.pinned) || (b.at - a.at)).slice(0, 30);
@@ -1662,6 +1754,7 @@ const SOCIAL = require('./social')({ routes, db, H, send, fail, clean, nameOf, b
 const COMMUNITY = require('./community')({ routes, db, H, send, fail, clean, nameOf, byName, list, areFriends, isStaff, isBanned, checkText, slowmode, save, q,
   presence, isOnline, isOwnerUuid, isPlus, isListing, storeOut, SOCIAL, DATA, SKINS, PUBLIC_URL, onlineCount, OWNERS,
   discordInfo: () => ({ configured: !!(DISCORD_WEBHOOK || (DISCORD_BOT && DISCORD_CHANNEL)), lastError: DISCORD_BOT && DISCORD_CHANNEL ? discordState.lastError : '' }) });
+const EXTRAS = require('./extras')({ routes, db, send, fail, nameOf, byName, areFriends, isBanned, save, q, SOCIAL });
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -1743,6 +1836,8 @@ const server = http.createServer(async (req, res) => {
       if (q(req).get('have') !== e.song) out.lines = e.lines;
       return send(res, 200, out);
     }
+    const pk = /^\/packs\/([a-z]{2,12})$/.exec(url.pathname);
+    if (pk && req.method === 'GET' && PACK_IDS.includes(pk[1])) return send(res, 200, (db.packs || {})[pk[1]] || {});
     const key = `${req.method} ${url.pathname}`;
     const handler = routes[key];
     if (!handler) return fail(res, 404, 'not found');
@@ -1750,7 +1845,7 @@ const server = http.createServer(async (req, res) => {
     const body = (req.method === 'POST' || req.method === 'PUT') ? await readBody(req, limit) : {};
     const open = key === 'GET /' || key === 'GET /stats' || key === 'POST /overlay/link' || key.startsWith('POST /auth/') || key === 'POST /cosmetics/bulk'
       || key === 'POST /blox/np' || key === 'POST /kofi' || key === 'GET /config' || key === 'GET /kycos' || key === 'GET /mcskin' || key === 'GET /store/items' || key === 'GET /store/image' || key === 'GET /store/kycos' || key === 'GET /store/item' || key === 'GET /store/photo' || key === 'GET /chat/img' || key === 'GET /chat' || key.startsWith('GET /cf/') || key === 'GET /link/discord/callback' || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version' || key.startsWith('POST /collab/') || key === 'GET /servers' || key === 'GET /servers/one' || key === 'GET /lfg' || key === 'GET /voice' || key === 'GET /stickers'
-      || ['GET /creators', 'GET /creator', 'GET /card', 'GET /leaderboards', 'GET /achievements', 'GET /skins', 'GET /skins/png', 'GET /status/info'].includes(key);
+      || ['GET /creators', 'GET /creator', 'GET /card', 'GET /leaderboards', 'GET /achievements', 'GET /skins', 'GET /skins/png', 'GET /status/info', 'GET /overlay/live', 'POST /packs/set', 'GET /packs/suggestions'].includes(key);
     let me = null;
     if (!open) { me = auth(req); if (!me) return fail(res, 401, 'not logged in'); }
     else { try { me = auth(req); } catch (e) { me = null; } } // open routes: logged in is optional

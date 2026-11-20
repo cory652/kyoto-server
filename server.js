@@ -150,7 +150,7 @@ const routes = {
   },
 
   'POST /presence': async (req, res, body, me) => {
-    presence.set(me, { lastSeen: Date.now(), server: String(body.server || '').slice(0, 80), join: String(body.join || '').slice(0, 80), calls: !!body.calls });
+    presence.set(me, { lastSeen: Date.now(), server: String(body.server || '').slice(0, 80), join: String(body.join || '').slice(0, 80), calls: !!body.calls, song: String(body.song || '').slice(0, 80), artist: String(body.artist || '').slice(0, 60) });
     send(res, 200, { online: onlineCount() });
   },
 
@@ -518,7 +518,13 @@ routes['POST /hub/delete'] = async (req, res, body, me) => {
 };
 routes['POST /hub/report'] = async (req, res, body, me) => {
   if (slowmode(me + 'report', 5000)) return fail(res, 429, 'Slow down');
-  H.reports.push({ kind: String(body.kind || 'post').slice(0, 8), id: String(body.id).slice(0, 20), by: me, reason: clean(body.reason, 100), at: Date.now() });
+  const rep = { kind: String(body.kind || 'post').slice(0, 8), id: String(body.id).slice(0, 20), by: me, reason: clean(body.reason, 100), at: Date.now() };
+  if (body.where) rep.where = String(body.where).slice(0, 40);
+  if (body.text) rep.text = clean(body.text, 300); // what the message said (DMs aren't readable by mods otherwise)
+  if (body.who) rep.who = clean(body.who, 40);
+  if (rep.kind === 'chat') { const m = H.chat.find(x => String(x.id) === rep.id); if (m) { rep.text = m.text || (m.voice ? '[voice message]' : m.img ? '[picture]' : ''); rep.uuid = m.uuid; } }
+  H.reports.push(rep);
+  if (DISCORD_REPORT_HOOK) fetch(DISCORD_REPORT_HOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'Kyoto Reports', content: `Report (${rep.kind}${rep.where ? ' ' + rep.where : ''}) by ${nameOf(me)}: ${rep.reason}\n> ${(rep.who || (rep.uuid ? nameOf(rep.uuid) : '?'))}: ${(rep.text || '').slice(0, 300)}`.slice(0, 1900), allowed_mentions: { parse: [] } }) }).catch(() => {});
   if (H.reports.length > 500) H.reports.shift();
   save(); send(res, 200, { ok: true });
 };
@@ -552,7 +558,9 @@ routes['POST /chat/image'] = async (req, res, body, me) => {
   const img = crypto.randomBytes(9).toString('hex');
   fs.writeFileSync(path.join(HUB_IMG, 'c' + img), buf);
   const m = { id: H.seq++, uuid: me, text: clean(body.text, 300), img, at: Date.now() };
-  pushChat(m); toDiscord(m);
+  const ch = String(body.ch || '').toLowerCase().replace(/^(play|mc|join|hub)\./, '').slice(0, 60);
+  if (/^[a-z0-9.\-]+(:\d+)?$/.test(ch)) m.ch = ch;
+  pushChat(m); if (!m.ch) toDiscord(m);
   send(res, 200, { ok: true });
 };
 routes['GET /chat/img'] = async (req, res) => {
@@ -568,6 +576,7 @@ routes['GET /chat/img'] = async (req, res) => {
 // Hub -> Discord: DISCORD_WEBHOOK (the webhook URL, kept only here on the server).
 // Discord -> Hub: DISCORD_BOT_TOKEN + DISCORD_CHANNEL_ID (a bot in your server with "Message Content Intent" on).
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK || '';
+const DISCORD_REPORT_HOOK = process.env.DISCORD_REPORT_WEBHOOK || ''; // optional: a private staff channel for reports
 const DISCORD_BOT = process.env.DISCORD_BOT_TOKEN || '';
 const DISCORD_CHANNEL = process.env.DISCORD_CHANNEL_ID || '';
 const webhookId = (/webhooks\/(\d+)\//.exec(DISCORD_WEBHOOK) || [])[1] || '';
@@ -1217,6 +1226,8 @@ routes['GET /cf/mod'] = cfRoute(async p => {
   const [m, d] = await Promise.all([cf(`/v1/mods/${id}`), cf(`/v1/mods/${id}/description`).catch(() => ({ data: '' }))]);
   return { data: m.data, description: d.data || '' };
 });
+// one exact file (modpack import): download link + name
+routes['GET /cf/file'] = cfRoute(p => cf(`/v1/mods/${int(p.get('mod'), 1, 1e9, 0)}/files/${int(p.get('file'), 1, 1e10, 0)}`));
 routes['GET /cf/files'] = cfRoute(p => {
   const id = int(p.get('id'), 1, 1e9, 0);
   const s = new URLSearchParams({ pageSize: '20' });
@@ -1726,6 +1737,10 @@ const SITE_TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; cha
 function serveSite(req, res, pathname) {
   // pretty URLs: /edit, /u/<name>, /download, /features -> the single page app
   let rel = decodeURIComponent(pathname);
+  // kyoto-server.onrender.com/<name or custom URL> -> that profile
+  const vanity = /^\/([A-Za-z0-9_]{3,16})\/?$/.exec(rel);
+  if (vanity && !WEB.RESERVED.has(vanity[1].toLowerCase()) && (WEB.bySlug(vanity[1]) || (byName(vanity[1]) && db.profiles[byName(vanity[1])]))) rel = '/index.html';
+  if (/^\/(wrapped|wrapped\/[A-Za-z0-9_]{1,16}|badges|events|blog|blog\/\d{1,8}|feedback|bug|docs|docs\/[a-z0-9-]{1,30}|creator-program|me)\/?$/.test(rel)) rel = '/index.html';
   if (rel === '/' || /^\/(edit|mod|u\/[A-Za-z0-9_]{1,16}|download|features|profile|news|news\/[\w-]{1,40}|changelog|store|cosmetics|hub|hub\/(?:chat|dms|voice|lfg|servers|trades|mods)|rooms|studio|creators|leaderboards|skins|wishlist|invite|status|card|achievements|(?:creator|card|achievements|wishlist)\/[A-Za-z0-9_]{1,16})\/?$/.test(rel)) rel = '/index.html';
   if (/^\/overlay\/?$/.test(rel)) rel = '/overlay.html';
   else if (/^\/overlay\/setup\/?$/.test(rel)) rel = '/overlay-setup.html';
@@ -1734,6 +1749,10 @@ function serveSite(req, res, pathname) {
   const file = path.normalize(path.join(SITE, rel));
   if (!file.startsWith(SITE) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return false;
   const ext = path.extname(file).toLowerCase();
+  if (rel === '/index.html' && pathname !== '/') {
+    const html = WEB.htmlWithEmbed(fs.readFileSync(file, 'utf8'), pathname.replace(/\/$/, '') || '/');
+    if (html) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }); res.end(html); return true; }
+  }
   const stat = fs.statSync(file);
   const headers = { 'Content-Type': SITE_TYPES[ext] || 'application/octet-stream', 'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=86400' };
   // videos need range requests so browsers can seek/stream them
@@ -1755,6 +1774,8 @@ const COMMUNITY = require('./community')({ routes, db, H, send, fail, clean, nam
   presence, isOnline, isOwnerUuid, isPlus, isListing, storeOut, SOCIAL, DATA, SKINS, PUBLIC_URL, onlineCount, OWNERS,
   discordInfo: () => ({ configured: !!(DISCORD_WEBHOOK || (DISCORD_BOT && DISCORD_CHANNEL)), lastError: DISCORD_BOT && DISCORD_CHANNEL ? discordState.lastError : '' }) });
 const EXTRAS = require('./extras')({ routes, db, send, fail, nameOf, byName, areFriends, isBanned, save, q, SOCIAL });
+const notifyStaff = text => { const hook = DISCORD_REPORT_HOOK || ''; if (hook) fetch(hook, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'Kyoto', content: String(text).slice(0, 1900), allowed_mentions: { parse: [] } }) }).catch(() => {}); };
+const WEB = require('./web')({ routes, db, H, send, fail, clean, nameOf, byName, isStaff, isBanned, isOwnerUuid, isPlus, checkText, slowmode, save, q, presence, isOnline, COMMUNITY, PUBLIC_URL, list, notifyStaff, DATA });
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -1805,8 +1826,8 @@ const server = http.createServer(async (req, res) => {
     }
     const prof = /^\/profile\/([A-Za-z0-9_]{1,16})(?:\/(video|audio|avatar|image))?$/.exec(url.pathname);
     if (req.method === 'GET' && prof) {
-      const uuid = byName(prof[1]);
-      const isOwner = OWNERS.includes(prof[1].toLowerCase());
+      const uuid = byName(prof[1]) || WEB.bySlug(prof[1]);
+      const isOwner = uuid ? OWNERS.includes(nameOf(uuid).toLowerCase()) : false;
       const p = uuid ? db.profiles[uuid] : null;
       if (prof[2]) {
         if (!uuid || !p || !p[prof[2] + 'Ext']) return fail(res, 404, 'no media');
@@ -1815,7 +1836,7 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, fs.readFileSync(file), MEDIA_TYPES[p[prof[2] + 'Ext']] || 'application/octet-stream');
       }
       if (!uuid || !p || isBanned(uuid)) return fail(res, 404, 'no profile');
-      if (!q(req).get('noview')) { p.views = (p.views || 0) + 1; save(); }
+      if (!q(req).get('noview')) { p.views = (p.views || 0) + 1; try { WEB.onView(uuid, req); } catch (e) { /* analytics are optional */ } save(); }
       const badges = ['kyoto'];
       if (isPlus(uuid)) badges.unshift('plus');
       if (isOwner) badges.unshift('owner');
@@ -1836,16 +1857,17 @@ const server = http.createServer(async (req, res) => {
       if (q(req).get('have') !== e.song) out.lines = e.lines;
       return send(res, 200, out);
     }
+    if (req.method === 'GET' && url.pathname.startsWith('/api/v1/') && WEB.apiPath(url.pathname, req, res)) return;
     const pk = /^\/packs\/([a-z]{2,12})$/.exec(url.pathname);
     if (pk && req.method === 'GET' && PACK_IDS.includes(pk[1])) return send(res, 200, (db.packs || {})[pk[1]] || {});
     const key = `${req.method} ${url.pathname}`;
     const handler = routes[key];
     if (!handler) return fail(res, 404, 'not found');
-    const limit = key === 'PUT /profile/media' ? 22000000 : key === 'POST /store/listing' ? 16000000 : key === 'PUT /cosmetics' ? 6000000 : key.startsWith('POST /collab/') ? 4000000 : key === 'POST /groups/image' || key === 'POST /chat/image' ? 4500000 : key === 'POST /skins/post' ? 400000 : 2500000;
+    const limit = key === 'PUT /profile/media' ? 22000000 : key === 'POST /store/listing' ? 16000000 : key === 'PUT /cosmetics' ? 6000000 : key.startsWith('POST /collab/') ? 4000000 : key === 'POST /groups/image' || key === 'POST /chat/image' ? 4500000 : key === 'POST /skins/post' ? 400000 : key === 'POST /bugs' ? 600000 : 2500000;
     const body = (req.method === 'POST' || req.method === 'PUT') ? await readBody(req, limit) : {};
     const open = key === 'GET /' || key === 'GET /stats' || key === 'POST /overlay/link' || key.startsWith('POST /auth/') || key === 'POST /cosmetics/bulk'
       || key === 'POST /blox/np' || key === 'POST /kofi' || key === 'GET /config' || key === 'GET /kycos' || key === 'GET /mcskin' || key === 'GET /store/items' || key === 'GET /store/image' || key === 'GET /store/kycos' || key === 'GET /store/item' || key === 'GET /store/photo' || key === 'GET /chat/img' || key === 'GET /chat' || key.startsWith('GET /cf/') || key === 'GET /link/discord/callback' || key === 'GET /news' || key === 'GET /version' || key === 'POST /web/login' || key === 'GET /mods/list' || key === 'GET /admin' || key === 'POST /news' || key === 'POST /news/delete' || key === 'POST /version' || key.startsWith('POST /collab/') || key === 'GET /servers' || key === 'GET /servers/one' || key === 'GET /lfg' || key === 'GET /voice' || key === 'GET /stickers'
-      || ['GET /creators', 'GET /creator', 'GET /card', 'GET /leaderboards', 'GET /achievements', 'GET /skins', 'GET /skins/png', 'GET /status/info', 'GET /overlay/live', 'POST /packs/set', 'GET /packs/suggestions'].includes(key);
+      || ['GET /creators', 'GET /creator', 'GET /card', 'GET /leaderboards', 'GET /achievements', 'GET /skins', 'GET /skins/png', 'GET /status/info', 'GET /overlay/live', 'GET /chat/voice', 'GET /chat/channels', 'GET /api/v1', 'GET /api/v1/stats', 'GET /api/v1/events', 'GET /api/v1/version', 'GET /events', 'GET /events/ics', 'GET /blog', 'GET /blog/one', 'GET /feedback', 'GET /badges', 'GET /wrapped', 'GET /creator/program', 'GET /profile-extras', 'GET /slug', 'POST /bugs', 'POST /packs/set', 'GET /packs/suggestions'].includes(key);
     let me = null;
     if (!open) { me = auth(req); if (!me) return fail(res, 401, 'not logged in'); }
     else { try { me = auth(req); } catch (e) { me = null; } } // open routes: logged in is optional

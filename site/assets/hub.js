@@ -2,6 +2,7 @@
    Looking For Group, Server Reviews, Trades, and Mods for staff. Messages have stickers, reactions, replies, polls and pins. */
 'use strict';
 (() => {
+  let ch = '', chList = [];
   let tab = 'chat', dmWith = null, group = null, since = 0, timer = 0, me = null, msgs = [], pins = [], pending = null, opened = false, reply = null, convo = null;
   let STK = [], REA = ['heart', 'fire', 'lol', 'wow', 'sad', 'up', 'gg', 'skull'];
   const feed = () => $('#hubFeed'), view = () => $('#hubView');
@@ -13,7 +14,7 @@
   const linkify = s => esc(s).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}" target="_blank" rel="noopener nofollow">${u}</a>`).replace(/(^|\s)@([A-Za-z0-9_]{3,16})/g, (m, a, n) => `${a}<a class="ment${me && n.toLowerCase() === me.name.toLowerCase() ? ' me' : ''}" href="/u/${n}" data-link>@${n}</a>`);
   const stkUrl = id => `/img/stickers/${id}.png`, reaUrl = r => REA.includes(r) ? `/img/reactions/${r}.png` : stkUrl(r);
   const where = () => tab === 'chat' ? 'chat' : group ? 'g:' + group : dmWith ? 'dm:' + dmWith : null;
-  const modeCol = m => ({ online: '#3ddc84', away: '#ffd166', busy: '#ff5d7a', invisible: '#8d919c', offline: '#5b5f6b' }[m] || '#5b5f6b');
+  const modeCol = m => ({ online: '#c5c5c5', away: '#e6e6e6', busy: '#909090', invisible: '#a0a0a0', offline: '#6c6c6c' }[m] || '#6c6c6c');
   const modeName = m => ({ online: 'Online', away: 'Away', busy: 'Do not disturb', invisible: 'Invisible', offline: 'Offline' }[m] || 'Offline');
   const streakPill = s => s && s.n > 0 ? `<span class="streak${s.risk ? ' risk' : ''}${s.today ? ' done' : ''}" title="${s.n} day streak${s.today ? ', done today' : s.risk ? ` (ends in ${s.hoursLeft} h: say hi!)` : ''}">${icon('flame')}${s.n}</span>` : '';
   function modal(html, cls = '') {
@@ -58,7 +59,8 @@
     $('#hubPoll').hidden = !(t === 'chat' || group);
     if (t !== 'rooms' && R.id) R.leave(false);
     const T = (title, sub, right) => { $('#hubTitle').innerHTML = title; $('#hubSub').innerHTML = sub; $('#hubTopR').innerHTML = right || ''; };
-    if (t === 'chat') { T('# chat', 'Talk with every Kyoto player, in game, here and on Discord.'); $('#hubInput').placeholder = 'Message #chat'; }
+    $('#chBar').hidden = t !== 'chat';
+    if (t === 'chat') { T('# chat', 'Talk with every Kyoto player, in game, here and on Discord.'); $('#hubInput').placeholder = 'Message #chat'; const qc = new URLSearchParams(location.search).get('ch'); if (qc && !chosenCh) { chosenCh = true; ch = qc.toLowerCase(); } renderChannels(); loadChannels(); }
     if (t === 'dms') {
       if (group) T('<span class="gdot"></span>Group', 'Loading…');
       else if (dmWith) T('@ ' + esc(dmWith), 'Private chat. Pictures only go to friends.');
@@ -150,9 +152,89 @@
     if (w.startsWith('g:')) { group = w.slice(2); dmWith = null; return switchTab('dms', true); }
   }
 
+
+  /* ================================================================ report (every message) ================================================================ */
+  function reportMsg(id, kind) {
+    const m = msgs.find(x => String(x.id) === String(id)) || {};
+    const reasons = ['Mean or bullying', 'Spam or scam', 'Not safe / gross', 'Cheating or hacks', 'Something else'];
+    const box = modal(`<h3>Report this message</h3><p class="muted small">${esc(m.name || '')}${m.text ? ': ' + esc(m.text.slice(0, 120)) : m.voice ? ': voice message' : m.img ? ': picture' : ''}</p>
+      <div class="replist">${reasons.map((r, i) => `<label><input type="radio" name="rr" value="${esc(r)}" ${i ? '' : 'checked'}><span>${esc(r)}</span></label>`).join('')}</div>
+      <textarea id="repMore" maxlength="100" placeholder="Anything else? (optional)"></textarea>
+      <div class="mrow"><button class="btn ghost" data-x>Cancel</button><button class="btn glow" id="repGo">${icon('flag')} Report</button></div>`, 'rep');
+    $('#repGo', box).onclick = async () => {
+      const why = ($('input[name=rr]:checked', box) || {}).value + (($('#repMore', box).value || '').trim() ? ': ' + $('#repMore', box).value.trim() : '');
+      try {
+        await api('/hub/report', { method: 'POST', body: { kind: kind === 'chat' ? 'chat' : group ? 'group' : 'dm', id: String(id), where: where(), who: m.name || '', text: m.text || (m.voice ? '[voice message]' : m.img ? '[picture]' : ''), reason: why } });
+        box.remove(); toast('Reported', 'Thanks, a mod will look at it.');
+      } catch (e) { toast('Couldn\'t report', e.message); }
+    };
+  }
+
+  /* ================================================================ voice messages ================================================================ */
+  const vfmt = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+  function voiceHtml(v) {
+    const bars = Array.from({ length: 28 }, (_, i) => 4 + Math.round(Math.abs(Math.sin(i * 1.7 + v.dur) * 14) + (i * 7 + v.dur * 3) % 6));
+    return `<div class="mvoice"><button class="vplay" data-vplay="${esc(v.id)}" title="Play">${icon('play')}</button><div class="vwave">${bars.map(h => `<i style="height:${h}px"></i>`).join('')}</div><span class="vdur">${vfmt(v.dur)}</span></div>`;
+  }
+  let vAudio = null, vBtn = null;
+  function playVoice(b) {
+    if (vAudio && vBtn === b) { vAudio.pause(); vAudio = null; b.innerHTML = icon('play'); b.closest('.mvoice').classList.remove('on'); return; }
+    if (vAudio) { vAudio.pause(); if (vBtn) { vBtn.innerHTML = icon('play'); vBtn.closest('.mvoice').classList.remove('on'); } }
+    vAudio = new Audio(`${CONFIG.api}/chat/voice?id=${b.dataset.vplay}`); vBtn = b;
+    const box = b.closest('.mvoice'), bars = $$('.vwave i', box);
+    box.classList.add('on'); b.innerHTML = icon('pause');
+    vAudio.ontimeupdate = () => { const p = vAudio.duration ? vAudio.currentTime / vAudio.duration : 0; bars.forEach((x, i) => x.classList.toggle('lit', i / bars.length < p)); $('.vdur', box).textContent = vfmt(vAudio.currentTime); };
+    vAudio.onended = () => { box.classList.remove('on'); b.innerHTML = icon('play'); bars.forEach(x => x.classList.remove('lit')); vAudio = null; };
+    vAudio.play().catch(e => toast('Couldn\'t play it', e.message));
+  }
+  let rec = null;
+  $('#hubMic').onclick = async () => {
+    if (!loggedIn()) return toast('Log in first', 'Type /kyoto link in game, then log in.');
+    if (rec) return rec.stop();
+    if (!navigator.mediaDevices || !window.MediaRecorder) return toast('Can\'t record here', 'Your browser doesn\'t support voice messages.');
+    let stream; try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { return toast('No microphone', 'Allow the microphone for this site to send voice messages.'); }
+    const type = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm', 'audio/mp4'].find(t => MediaRecorder.isTypeSupported(t)) || '';
+    const chunks = [], t0 = Date.now(), mic = $('#hubMic');
+    rec = new MediaRecorder(stream, type ? { mimeType: type, audioBitsPerSecond: 48000 } : undefined);
+    rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    const tick = setInterval(() => { const s = (Date.now() - t0) / 1000; $('#hubInput').placeholder = `Recording ${vfmt(s)}... click the mic again to send`; if (s >= 60) rec && rec.stop(); }, 250);
+    mic.classList.add('recording');
+    rec.onstop = async () => {
+      clearInterval(tick); stream.getTracks().forEach(t => t.stop()); mic.classList.remove('recording'); rec = null; setPlaceholder();
+      const dur = (Date.now() - t0) / 1000; if (dur < 0.7) return toast('Too short', 'Hold on a little longer.');
+      const blob = new Blob(chunks, { type: type.split(';')[0] || 'audio/webm' });
+      const b64 = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(String(fr.result).split(',')[1]); fr.readAsDataURL(blob); });
+      try { await api('/chat/voice', { method: 'POST', body: { audio: b64, dur, where: where(), ch } }); poll(false); } catch (e) { toast('Couldn\'t send', e.message); }
+    };
+    rec.start(250);
+  };
+
+  /* ================================================================ server channels ================================================================ */
+  const chName = c => c ? '#' + c.replace(/^(play|mc|join|hub)\./, '').replace(/\.(net|com|org|gg|co|io|me|club|uk)$/, '') : '# chat';
+  function setPlaceholder() { const i = $('#hubInput'); if (i && tab === 'chat') i.placeholder = 'Message ' + chName(ch); }
+  async function loadChannels() {
+    try { const r = await api('/chat/channels', { auth: loggedIn() }); chList = r.channels || []; if (r.here && !chosenCh) { ch = r.here; since = 0; msgs = []; pollChat(true).catch(() => {}); } } catch (e) { chList = [{ ch: '', name: 'General' }]; }
+    renderChannels();
+  }
+  let chosenCh = false;
+  function renderChannels() {
+    const bar = $('#chBar'); if (!bar) return;
+    bar.hidden = tab !== 'chat';
+    if (bar.hidden) return;
+    if (ch && !chList.some(c => c.ch === ch)) chList.push({ ch, online: 0 });
+    bar.innerHTML = chList.map(c => `<button data-ch="${esc(c.ch)}" class="${c.ch === ch ? 'on' : ''}" title="${c.ch ? esc(c.ch) + ' · players on this server talk here' : 'Everyone, also on Discord'}">${c.ch ? icon('server') : icon('chat')}<span>${esc(c.ch ? chName(c.ch).slice(1) : 'General')}</span>${c.online ? `<i>${c.online}</i>` : ''}</button>`).join('')
+      + `<button class="chadd" id="chAdd" title="Open a server's channel">${icon('plus')}</button>`;
+    $$('[data-ch]', bar).forEach(b => b.onclick = () => openChannel(b.dataset.ch));
+    $('#chAdd').onclick = () => { const v = prompt('Server address (like donutsmp.net)'); if (v && v.trim()) openChannel(v.trim().toLowerCase()); };
+    $('#hubTitle').textContent = chName(ch);
+    $('#hubSub').textContent = ch ? `Chat for people who play on ${ch}. Kyoto opens it by itself when you join that server.` : 'Talk with every Kyoto player, in game, here and on Discord.';
+    setPlaceholder();
+  }
+  function openChannel(c) { chosenCh = true; ch = c; since = 0; msgs = []; pins = []; feed().innerHTML = ''; renderChannels(); pollChat(true).catch(() => {}); }
+
   /* ================================================================ messages ================================================================ */
   async function pollChat(first) {
-    const r = await api('/chat?since=' + since, { auth: loggedIn() });
+    const r = await api('/chat?since=' + since + (ch ? '&ch=' + encodeURIComponent(ch) : ''), { auth: loggedIn() });
     const got = r.messages || [];
     since = Math.max(0, (r.now || Date.now()) - 3000);
     const before = JSON.stringify(msgs.slice(-3)), pinBefore = JSON.stringify(pins.map(p => p.id));
@@ -173,7 +255,7 @@
     const grouped = prev && !prev.sys && prev.name === m.name && !!prev.discord === !!m.discord && m.at - prev.at < 5 * 60000 && !m.reply && !m.poll && !m.gift;
     const img = m.img ? (kind !== 'chat' ? `${CONFIG.api}/dm/img?id=${m.img}&auth=${encodeURIComponent(localStorage.getItem('kyoto.token') || '')}` : `${CONFIG.api}/chat/img?id=${m.img}`) : null;
     const rq = m.reply ? `<button class="mreply" data-jump="${m.reply.id}"><img src="${headUrl(m.reply.name)}" alt=""><b>${esc(m.reply.name)}</b><span>${m.reply.sticker ? '[sticker]' : m.reply.img && !m.reply.text ? '[picture]' : esc(m.reply.text)}</span></button>` : '';
-    let body = `${m.text ? `<div class="mt">${linkify(m.text)}</div>` : ''}${img ? `<img class="mimg" src="${img}" alt="picture" loading="lazy">` : ''}${m.sticker ? `<img class="mstk" src="${stkUrl(m.sticker)}" alt="${esc(m.sticker)}" title="${esc((STK.find(s => s.id === m.sticker) || {}).name || m.sticker)}">` : ''}`;
+    let body = `${m.voice ? voiceHtml(m.voice) : ''}${m.text ? `<div class="mt">${linkify(m.text)}</div>` : ''}${img ? `<img class="mimg" src="${img}" alt="picture" loading="lazy">` : ''}${m.sticker ? `<img class="mstk" src="${stkUrl(m.sticker)}" alt="${esc(m.sticker)}" title="${esc((STK.find(s => s.id === m.sticker) || {}).name || m.sticker)}">` : ''}`;
     if (m.gift) body = giftHtml(m) + body.replace(/<div class="mt">.*?<\/div>/, '');
     if (m.poll) body += pollHtml(m);
     if (m.re && m.re.length) body += `<div class="mre">${m.re.map(r => `<button class="rchip${r.me ? ' me' : ''}" data-re="${esc(r.r)}" data-mid="${m.id}" title="${esc(r.who.join(', '))}${r.n > r.who.length ? ' and more' : ''}"><img src="${reaUrl(r.r)}" alt="">${r.n}</button>`).join('')}<button class="rchip add" data-addre="${m.id}" title="React">${icon('smile')}</button></div>`;
@@ -182,7 +264,7 @@
       <button data-qre="${m.id}" title="React">${icon('smile')}</button><button data-rep2="${m.id}" title="Reply">${icon('reply')}</button>
       ${canPin ? `<button data-pin="${m.id}" title="${m.pinned ? 'Unpin' : 'Pin'}" class="${m.pinned ? 'lit' : ''}">${icon('pin')}</button>` : ''}
       ${m.me || (kind === 'chat' && me.staff) ? `<button data-mdel="${m.id}" title="Delete">${icon('trash')}</button>` : ''}
-      ${kind === 'chat' && !m.me ? `<button data-rep="${m.id}" title="Report">${icon('flag')}</button>` : ''}</div>` : me && m.discord && m.id ? `<div class="mtools"><button data-rep2="${m.id}" title="Reply">${icon('reply')}</button>${me.staff ? `<button data-mdel="${m.id}" title="Delete">${icon('trash')}</button>` : ''}</div>` : '';
+      ${!m.me ? `<button data-rep="${m.id}" title="Report">${icon('flag')}</button>` : ''}</div>` : me && m.discord && m.id ? `<div class="mtools"><button data-rep2="${m.id}" title="Reply">${icon('reply')}</button><button data-rep="${m.id}" title="Report">${icon('flag')}</button>${me.staff ? `<button data-mdel="${m.id}" title="Delete">${icon('trash')}</button>` : ''}</div>` : '';
     const pin = m.pinned ? `<span class="mpinned" title="Pinned">${icon('pin')}</span>` : '';
     if (grouped) return `<div class="msg cont${m.me ? ' mine' : ''}" data-mid="${m.id}"><span class="mtime">${new Date(m.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span><div class="mb">${body}</div>${pin}${tools}</div>`;
     return `<div class="msg${m.me ? ' mine' : ''}" data-mid="${m.id}"><img class="mav" src="${m.discord ? (m.avatar || '/img/favicon.png') : headUrl(m.name)}" alt="">
@@ -210,7 +292,8 @@
   function wireMsgs(root, kind) {
     if (window.KY_ITEMS) window.KY_ITEMS.draw(root);
     $$('.mimg', root).forEach(i => i.onclick = () => { const lb = $('#lightbox'); $('img', lb).src = i.src; lb.hidden = false; });
-    $$('[data-rep]', root).forEach(b => b.onclick = async () => { const why = prompt('What\'s wrong with this message?'); if (why === null) return; try { await api('/hub/report', { method: 'POST', body: { kind: 'chat', id: b.dataset.rep, reason: why || 'Reported on the website' } }); toast('Reported', 'Thanks, a mod will look at it.'); } catch (e) { toast('Couldn\'t report', e.message); } });
+    $$('[data-rep]', root).forEach(b => b.onclick = () => reportMsg(b.dataset.rep, kind));
+    $$('[data-vplay]', root).forEach(b => b.onclick = () => playVoice(b));
     $$('[data-mdel]', root).forEach(b => b.onclick = async () => { if (!confirm('Delete this message?')) return; await call('/msg/delete', { where: where(), id: Number(b.dataset.mdel) }); msgs = msgs.filter(x => String(x.id) !== b.dataset.mdel); paint(); });
     $$('[data-re]', root).forEach(b => b.onclick = () => react(Number(b.dataset.mid), b.dataset.re));
     $$('[data-qre], [data-addre]', root).forEach(b => b.onclick = e => { e.stopPropagation(); reactPicker(b, Number(b.dataset.qre || b.dataset.addre)); });
@@ -397,7 +480,7 @@
     const rp = reply ? reply.id : undefined; reply = null; renderReply();
     const body = Object.assign({ text, reply: rp }, extra || {});
     try {
-      if (tab === 'chat') { if (b64) await api('/chat/image', { method: 'POST', body: { image: b64, text } }); else await api('/chat/send', { method: 'POST', body }); }
+      if (tab === 'chat') { if (b64) await api('/chat/image', { method: 'POST', body: { image: b64, text, ch } }); else await api('/chat/send', { method: 'POST', body: Object.assign({ ch }, body) }); }
       else if (group) { if (b64) await api('/groups/image', { method: 'POST', body: { id: group, image: b64, text } }); else await api('/groups/send', { method: 'POST', body: Object.assign({ id: group }, body) }); }
       else if (dmWith) {
         if (b64) await api('/dm/image', { method: 'POST', body: { to: dmWith, image: b64 } });

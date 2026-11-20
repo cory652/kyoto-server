@@ -39,11 +39,13 @@
 
   /* ============================================ loading ============================================ */
   let B = null; // the open build
-  async function readFile(buf) {
+  async function readFile(buf, fileName) {
     let bytes = new Uint8Array(buf);
     if (bytes[0] === 0x1f && bytes[1] === 0x8b) bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+    // .litematic / .schem / structure .nbt start with an NBT compound tag (10); .kybuild is JSON
+    if (bytes[0] === 10) return KS_NBT.importSchematic(bytes, fileName);
     const d = JSON.parse(new TextDecoder().decode(bytes));
-    if (d.format !== 'kybuild') throw new Error('That isn\'t a .kybuild file');
+    if (d.format !== 'kybuild') throw new Error('That isn\'t a .kybuild or schematic file');
     return d;
   }
   async function openData(d) {
@@ -52,6 +54,7 @@
     buildGpu();
     frameView(true);
     setTime(0); playing = true; updatePlay();
+    if (d.mode === 'schematic') { showPlayer = false; $('#optPlayer').checked = false; }
     ['#playBtn', '#scrub', '#exportBtn', '#shotBtn', '#videoBtn'].forEach(s => { $(s).disabled = false; });
     $('#bTitle').textContent = d.name || 'Build';
     document.title = (d.name || 'Build') + ' - Kyoto Studio';
@@ -59,7 +62,7 @@
     $('#slice').max = B.size[1]; $('#slice').value = B.size[1]; $('#sliceLbl').textContent = 'All';
   }
   async function openFile(file) {
-    try { await openData(await readFile(await file.arrayBuffer())); toast('Opened', file.name, 'ok'); }
+    try { await openData(await readFile(await file.arrayBuffer(), file.name)); toast('Opened', file.name + (B && B.d.mode === 'schematic' ? ' · ' + B.d.final.length.toLocaleString() + ' blocks' : ''), 'ok'); }
     catch (e) { console.error(e); toast('Couldn\'t open it', e.message, 'bad'); }
   }
   for (const id of ['#fileIn', '#fileIn2']) $(id).onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) openFile(f); };
@@ -110,7 +113,7 @@
     }
     let terrain = 0;
     for (const [k, p] of finalMap) if (!runs.has(k) && p) { runs.set(k, [{ p, t0: -1, t1: Infinity, e0: -1, e1: Infinity, terrain: true }]); terrain++; }
-    const built = new Set([...startMap.keys()]);
+    const built = d.mode === 'schematic' ? new Set(finalMap.keys()) : new Set([...startMap.keys()]);
     // materials: what's there at the end (built part + everything)
     return { d, size: [SX, SY, SZ], K, pal, runs, events, dur, EV, built, terrain, finalMap, player: d.player || [] };
   }
@@ -124,6 +127,8 @@
   layout(location=2) in vec3 iPos; layout(location=3) in vec4 iData;
   uniform mat4 uVP; uniform float uTime, uAnim, uSlice, uTerrain, uHi; uniform sampler2D uPal; uniform vec3 uCam;
   out vec3 vN; out vec4 vCol; out vec3 vLocal; out vec3 vWorld; out float vFlash, vDist, vEmis;
+  out vec3 vCell; flat out float vLayer; flat out vec4 vTint; out vec2 vMods;
+  float layerOf(vec4 t, bool second){ return second ? floor(t.b*255.0+0.5) + floor(t.a*255.0+0.5)*256.0 : floor(t.r*255.0+0.5) + floor(t.g*255.0+0.5)*256.0; }
   void main(){
     float pid=iData.x, t0=iData.y, t1=iData.z, fl=iData.w;
     bool terrain = mod(fl,2.0) >= 1.0;
@@ -140,16 +145,21 @@
     vec3 ctr = (bmin+bmax)*0.5, loc = mix(bmin, bmax, aCorner);
     vec3 p = iPos + ctr + (loc-ctr)*s;
     gl_Position = uVP*vec4(p,1.0);
-    vN = aNormal; vCol = c; vLocal = aCorner; vWorld = iPos + loc; vEmis = ex.r;
+    vN = aNormal; vCol = c; vLocal = aCorner; vWorld = iPos + loc; vEmis = ex.r; vCell = loc;
+    vec4 fx = texelFetch(uPal, ivec2(int(pid),4), 0), fy = texelFetch(uPal, ivec2(int(pid),5), 0), fz = texelFetch(uPal, ivec2(int(pid),6), 0);
+    vLayer = aNormal.x > 0.5 ? layerOf(fx,false) : aNormal.x < -0.5 ? layerOf(fx,true) : aNormal.y > 0.5 ? layerOf(fy,false) : aNormal.y < -0.5 ? layerOf(fy,true) : aNormal.z > 0.5 ? layerOf(fz,false) : layerOf(fz,true);
+    vTint = texelFetch(uPal, ivec2(int(pid),7), 0);
+    vMods = vec2(terrain ? 1.0 : 0.0, 0.0);
     vFlash = t0 < 0.0 ? 0.0 : 1.0 - clamp((uTime-t0)/(uAnim*1.6+0.0001), 0.0, 1.0);
     vDist = distance(p, uCam);
     if (terrain) vCol.rgb = mix(vCol.rgb, vec3(dot(vCol.rgb, vec3(.3,.59,.11))), 0.45)*0.78;
-    if (uHi > 0.5) { if (ex.b > 0.5) vFlash = max(vFlash, 0.35 + 0.25*sin(uTime*0.0)); else vCol.rgb *= 0.28; }
+    if (uHi > 0.5) { if (ex.b > 0.5) vFlash = max(vFlash, 0.35 + 0.25*sin(uTime*0.0)); else { vCol.rgb *= 0.28; vMods.y = 1.0; } }
   }`;
   const FS = `#version 300 es
   precision highp float;
   in vec3 vN; in vec4 vCol; in vec3 vLocal; in vec3 vWorld; in float vFlash, vDist, vEmis;
-  uniform vec3 uSun, uFog; uniform float uFogDist, uPass, uSunI;
+  in vec3 vCell; flat in float vLayer; flat in vec4 vTint; in vec2 vMods;
+  uniform vec3 uSun, uFog; uniform float uFogDist, uPass, uSunI, uUseTex; uniform highp sampler2DArray uTex;
   out vec4 o;
   float hash(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719)))*43758.5453); }
   void main(){
@@ -157,14 +167,30 @@
     if (uPass < 0.5 && a < 0.99) discard;
     if (uPass > 0.5 && a >= 0.99) discard;
     vec3 n = normalize(vN);
+    bool tex = uUseTex > 0.5 && vLayer < 65000.0;
+    vec4 tc = vec4(1.0);
+    if (tex) {
+      // texture coordinates from where we are inside the block, so slabs and fences aren't stretched
+      vec2 tuv = abs(n.x) > 0.5 ? vec2(n.x > 0.0 ? 1.0 - vCell.z : vCell.z, 1.0 - vCell.y) : abs(n.y) > 0.5 ? vec2(vCell.x, n.y > 0.0 ? vCell.z : 1.0 - vCell.z) : vec2(n.z > 0.0 ? vCell.x : 1.0 - vCell.x, 1.0 - vCell.y);
+      tc = texture(uTex, vec3(clamp(tuv, 0.001, 0.999), vLayer));
+      if (uPass < 0.5 && tc.a < 0.5) discard;
+      if (vTint.a > 0.5 && uPass > 0.5) { a = tc.a; if (a < 0.05) discard; }
+    }
     float shade = n.y > 0.5 ? 1.0 : (n.y < -0.5 ? 0.5 : (abs(n.x) > 0.5 ? 0.74 : 0.87));
     shade *= mix(0.7, 1.0, uSunI) * (0.8 + 0.2*max(dot(n, normalize(uSun)), 0.0));
     vec2 uv = abs(n.x) > 0.5 ? vLocal.yz : (abs(n.y) > 0.5 ? vLocal.xz : vLocal.xy);
     float e = min(min(uv.x, 1.0-uv.x), min(uv.y, 1.0-uv.y));
     float edge = smoothstep(0.0, 0.07, e);
     float px = 0.9 + 0.1*hash(floor(vWorld*8.0 + n*0.01));
-    vec3 col = vCol.rgb * shade * (0.8 + 0.2*edge) * px;
-    col = mix(col, vCol.rgb*1.15, vEmis*0.7);
+    vec3 base = vCol.rgb;
+    if (tex) {
+      base = tc.rgb * vTint.rgb;
+      if (vMods.x > 0.5) base = mix(base, vec3(dot(base, vec3(.3,.59,.11))), 0.45)*0.78;
+      if (vMods.y > 0.5) base *= 0.28;
+      edge = 0.6 + 0.4*edge; px = 1.0;
+    }
+    vec3 col = base * shade * (0.8 + 0.2*edge) * px;
+    col = mix(col, base*1.15, vEmis*0.7);
     col += vFlash * vec3(0.55, 0.55, 0.6);
     float fog = clamp((vDist - uFogDist)/(uFogDist*1.6), 0.0, 0.85);
     o = vec4(mix(col, uFog, fog), a);
@@ -176,6 +202,7 @@
     const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name] = gl.getUniformLocation(p, a.name); }
     return { p, u };
   }
+  let texArr = null, useTex = true, texInfo = null;
   let P = null, LP = null, cubeBuf, instBuf, palTex, vao, pvao, pInstBuf, gridVao, gridBuf, gridCount = 0, instCount = 0;
   const PLAYER_PAL = 3; // extra palette slots at the end for the builder figure
   if (gl) {
@@ -224,24 +251,40 @@
     instCount = n;
     gl.bindBuffer(gl.ARRAY_BUFFER, instBuf); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
     // palette texture: row 0 colour, 1 box min, 2 box max, 3 extras (emissive, -, highlighted)
-    const W = pal.length + PLAYER_PAL, tex = new Uint8Array(W * 4 * 4);
+    const W = pal.length + PLAYER_PAL, ROWS = 8, tex = new Uint8Array(W * 4 * ROWS);
+    const at = window.KS_TEX ? KS_TEX.atlas(pal, Math.min(2048, gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS))) : null;
+    texInfo = at;
     const put = (row, col, r, g, b, a) => tex.set([r, g, b, a], (row * W + col) * 4);
     pal.forEach((p, c) => {
       put(0, c, p.c >> 16 & 255, p.c >> 8 & 255, p.c & 255, p.alpha);
       put(1, c, p.b[0] * 255, p.b[1] * 255, p.b[2] * 255, 255);
       put(2, c, p.b[3] * 255, p.b[4] * 255, p.b[5] * 255, 255);
       put(3, c, p.l > 7 ? 255 : p.l * 30, 0, highlight && p.base === highlight ? 255 : 0, 255);
+      const f = at ? at.faces.subarray(c * 6, c * 6 + 6) : [65535, 65535, 65535, 65535, 65535, 65535];
+      for (let r = 0; r < 3; r++) put(4 + r, c, f[r * 2] & 255, f[r * 2] >> 8, f[r * 2 + 1] & 255, f[r * 2 + 1] >> 8);
+      const t = at ? at.tint.subarray(c * 4, c * 4 + 4) : [255, 255, 255, 0];
+      put(7, c, t[0], t[1], t[2], t[3] ? 255 : 0);
     });
     // builder figure: legs, body, head (each fits inside one block cell)
     const pl = pal.length;
     [[0x3b48a8, [.25, 0, .37, .75, .75, .63]], [0x2aa6a6, [.2, 0, .35, .8, .8, .65]], [0xe0ac86, [.25, 0, .25, .75, .5, .75]]].forEach(([c, b], j) => {
       put(0, pl + j, c >> 16 & 255, c >> 8 & 255, c & 255, 255);
       put(1, pl + j, b[0] * 255, b[1] * 255, b[2] * 255, 255); put(2, pl + j, b[3] * 255, b[4] * 255, b[5] * 255, 255); put(3, pl + j, 0, 0, 255, 255);
+      for (let r = 4; r < 7; r++) put(r, pl + j, 255, 255, 255, 255); put(7, pl + j, 255, 255, 255, 0);
     });
     if (palTex) gl.deleteTexture(palTex);
     palTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, palTex);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, 4, 0, gl.RGBA, gl.UNSIGNED_BYTE, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, ROWS, 0, gl.RGBA, gl.UNSIGNED_BYTE, tex);
+    // block textures: one 16x16 layer each (pixel-sharp up close, smooth far away)
+    if (texArr) gl.deleteTexture(texArr);
+    texArr = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D_ARRAY, texArr);
+    const L = at ? at.layers : 1, tdata = at ? at.data : new Uint8Array(16 * 16 * 4).fill(255);
+    gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA8, 16, 16, L, 0, gl.RGBA, gl.UNSIGNED_BYTE, tdata);
+    gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    renderTexInfo();
     // ground grid
     const g = [], pad = 4;
     for (let x = -pad; x <= SX + pad; x++) g.push(x, 0, -pad, x, 0, SZ + pad);
@@ -395,6 +438,8 @@
     gl.uniform3fv(u.uSun, sk.sun); gl.uniform3fv(u.uFog, sk.fog); gl.uniform1f(u.uSunI, sk.i);
     gl.uniform1f(u.uFogDist, Math.max(40, cam.dist * 1.4));
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, palTex); gl.uniform1i(u.uPal, 0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D_ARRAY, texArr); gl.uniform1i(u.uTex, 1); gl.uniform1f(u.uUseTex, useTex && texArr ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE0);
     // pass 1: solid blocks, pass 2: glass + water on top
     gl.bindVertexArray(vao);
     gl.uniform1f(u.uPass, 0); gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, instCount);
@@ -472,16 +517,55 @@
     h.hidden = false;
   }
 
+  /* ============================================ textures ============================================ */
+  function renderTexInfo() {
+    const el = $('#texSrc'); if (!el || !window.KS_TEX) return;
+    el.textContent = KS_TEX.loaded ? 'Your textures: ' + KS_TEX.source + ' (' + KS_TEX.count + ')' : 'Kyoto pixel textures. Load your Minecraft ones for the real look.';
+    $('#texReset').hidden = !KS_TEX.loaded;
+  }
+  async function loadTexBuf(buf, label) {
+    try { const n = await KS_TEX.loadZip(buf, label); toast('Textures loaded', n + ' block textures from ' + label, 'ok'); }
+    catch (e) { toast('Couldn\'t load textures', e.message, 'bad'); }
+  }
+  if (window.KS_TEX) {
+    KS_TEX.onChange(() => { if (B) buildGpu(); renderTexInfo(); });
+    KS_TEX.restore().then(async ok => {
+      renderTexInfo();
+      if (!ok && APP && APP.mc) { try { const r = await APP.mc.textures(); if (r) await KS_TEX.loadZip(r.data, r.name); } catch (e) { /* no Minecraft found */ } }
+    });
+    $('#optTex').onchange = e => { useTex = e.target.checked; };
+    $('#texPack').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (f) loadTexBuf(await f.arrayBuffer(), f.name); };
+    $('#texReset').onclick = () => { KS_TEX.forget(); toast('Back to Kyoto textures'); };
+    $('#texMine').onclick = async () => {
+      if (APP && APP.mc) {
+        const r = await APP.mc.textures().catch(() => null);
+        if (r) return loadTexBuf(r.data, r.name);
+        return toast('Couldn\'t find Minecraft', 'Play once with the launcher, or pick a resource pack .zip', 'bad');
+      }
+      modal(`<h2>Use your Minecraft textures</h2><p>Pick the Minecraft game file on your computer. It's only read here in your browser, never uploaded, and it's remembered for next time.</p>
+        <p class="note">Windows: press <b>Win + R</b>, paste <code>%APPDATA%\\.minecraft\\versions</code>, open the newest version folder and pick the <b>.jar</b> inside (for Kyoto: <code>%APPDATA%\\.kyotoclient\\versions</code>). A resource pack <b>.zip</b> works too.</p>
+        <div class="mrow"><button class="ghost" data-close>Cancel</button><label class="pri">Pick the .jar / .zip<input type="file" id="texJar" accept=".jar,.zip" hidden></label></div>`);
+      $('#texJar').onchange = async e => { const f = e.target.files[0]; if (!f) return; closeModal(); toast('Reading textures...', f.name); loadTexBuf(await f.arrayBuffer(), f.name); };
+    };
+  }
+
   /* ============================================ info, materials, timeline ============================================ */
   function renderInfo() {
     const d = B.d, st = d.stats || {};
     const [SX, SY, SZ] = B.size;
+    if (d.mode === 'schematic') {
+      $('#info').innerHTML = `
+      <span>Name</span><b>${esc(d.name)}</b><span>Type</span><b>${esc(d.kind || 'Schematic')}</b><span>Made by</span><b>${esc(d.author || '?')}</b>
+      <span>Blocks</span><b>${d.final.length.toLocaleString()}</b><span>Size</span><b>${SX} × ${SY} × ${SZ}</b><span>Block types</span><b>${(d.palette.length - 1).toLocaleString()}</b>
+      <span>Plays</span><b>Bottom layer up</b>`;
+      return;
+    }
     $('#info').innerHTML = `
       <span>Name</span><b>${esc(d.name)}</b><span>Builder</span><b>${esc(d.author || '?')}</b>
       <span>Recorded</span><b>${new Date(d.created || Date.now()).toLocaleDateString()}</b><span>Time spent</span><b>${fmtTime(d.duration)}</b>
       <span>Placed</span><b>${(st.placed || 0).toLocaleString()}</b><span>Broken</span><b>${(st.broken || 0).toLocaleString()}</b>
       <span>Size</span><b>${SX} × ${SY} × ${SZ}</b><span>Minecraft</span><b>${esc(d.mc || '?')}</b>
-      <span>Recorded as</span><b>${d.mode === 'area' ? 'Area' : 'Follow me'}</b>
+      <span>${d.mode === 'schematic' ? 'Type' : 'Recorded as'}</span><b>${d.mode === 'schematic' ? esc(d.kind || 'Schematic') + ' (preview)' : d.mode === 'area' ? 'Area' : 'Follow me'}</b>
       <span>Pacing</span><b><select id="pace"><option value="even">Even (best)</option><option value="real">Real time</option></select></b>`;
     $('#pace').value = pacing;
     $('#pace').onchange = e => { const frac = T / totalT(); pacing = e.target.value; buildGpu(); setTime(frac * totalT()); drawHist(); };
@@ -674,7 +758,7 @@
         const want = new URLSearchParams(location.search).get('rec');
         if (want !== null && list[Number(want)]) { const b = $(`[data-rb="${Number(want)}"]`); if (b) b.click(); }
       });
-      APP.builds.pending().then(async b64 => { if (b64) { try { await openData(await readFile(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer)); } catch (e) { toast('Couldn\'t open it', e.message, 'bad'); } } });
+      APP.builds.pending().then(async r => { const b64 = r && typeof r === 'object' ? r.data : r, nm = r && typeof r === 'object' ? r.name : ''; if (b64) { try { await openData(await readFile(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer, nm)); } catch (e) { toast('Couldn\'t open it', e.message, 'bad'); } } });
     }
   }
   window.KS_BUILD = { openData, demo };

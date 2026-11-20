@@ -8,7 +8,7 @@
 <link rel="icon" href="/img/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/build.css?v=1">
+<link rel="stylesheet" href="/assets/build.css?v=2">
 </head>
 <body>
 <div id="app">
@@ -18,7 +18,7 @@
     <span class="crumb">Build Timelapse</span>
     <div class="title" id="bTitle">Open a build</div>
     <div class="topright">
-      <label class="tb file">Open .kybuild<input type="file" id="fileIn" accept=".kybuild,.json,.gz" hidden></label>
+      <label class="tb file">Open build / schematic<input type="file" id="fileIn" accept=".kybuild,.json,.gz,.litematic,.schem,.schematic,.nbt" hidden></label>
       <button class="tb" id="shotBtn" disabled>Screenshot</button>
       <button class="tb" id="videoBtn" disabled>Record video</button>
       <button class="pri" id="exportBtn" disabled>Export schematic</button>
@@ -31,8 +31,8 @@
       <div class="dcard">
         <div class="dicon"><svg viewBox="0 0 24 24"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M12 12 20 7.5M12 12 4 7.5M12 12v9"/></svg></div>
         <h1>Watch your build come together</h1>
-        <p>Record a build in Minecraft with Kyoto Client (<b>Right Shift → Tools → Build Recorder</b>, or <code>/kyoto build start</code>), then drop the <b>.kybuild</b> file here.</p>
-        <label class="pri big">Choose a .kybuild file<input type="file" id="fileIn2" accept=".kybuild,.json,.gz" hidden></label>
+        <p>Record a build in Minecraft with Kyoto Client (<b>Right Shift → Tools → Build Recorder</b>, or <code>/kyoto build start</code>), then drop the <b>.kybuild</b> file here.</p><p>Or drop a <b>.litematic</b>, <b>.schem</b> or structure <b>.nbt</b> to see it in 3D before you build it.</p>
+        <label class="pri big">Choose a file<input type="file" id="fileIn2" accept=".kybuild,.json,.gz,.litematic,.schem,.schematic,.nbt" hidden></label>
         <button class="ghost" id="demoBtn">Try a demo build</button>
         <div class="recent" id="recent"></div>
         <ol class="how"><li><b>Watch</b> the timelapse from any angle, at any speed.</li><li><b>Count</b> every block you used.</li><li><b>Export</b> a Litematica schematic (.litematic) or WorldEdit (.schem).</li></ol>
@@ -58,6 +58,12 @@
       <label class="row"><span>Ground grid</span><input type="checkbox" id="optGrid" checked><i class="sw"></i></label>
       <div class="slice"><span>Layers</span><input type="range" id="slice" min="0" max="1" value="1"><b id="sliceLbl">All</b></div>
       <div class="seg" id="skySeg"><button data-sky="day" class="on">Day</button><button data-sky="sunset">Sunset</button><button data-sky="night">Night</button></div>
+    </section>
+    <section class="card">
+      <h3>Blocks</h3>
+      <label class="row"><span>Textures</span><input type="checkbox" id="optTex" checked><i class="sw"></i></label>
+      <p class="muted texsrc" id="texSrc">Kyoto pixel textures</p>
+      <div class="texbtns"><button class="ghost" id="texMine">Use my Minecraft textures</button><label class="ghost">Resource pack<input type="file" id="texPack" accept=".zip,.jar" hidden></label><button class="ghost" id="texReset" hidden>Back to Kyoto's</button></div>
     </section>
     <section class="card grow">
       <h3>Materials <small id="matCount"></small></h3>
@@ -86,7 +92,8 @@
 <div id="modal" hidden><div class="mcard"><button class="mx" data-close>✕</button><div id="mbody"></div></div></div>
 <div id="toasts"></div>
 <script>window.KS_HOOKS = window.KS_HOOKS || {};</script>
-<script src="/assets/nbt.js?v=1"></script>
-<script src="/assets/build.js?v=2"></script>
+<script src="/assets/blocktex.js?v=1"></script>
+<script src="/assets/nbt.js?v=2"></script>
+<script src="/assets/build.js?v=3"></script>
 </body>
 </html>

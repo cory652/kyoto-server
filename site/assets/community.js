@@ -115,7 +115,7 @@
     let c; try { c = await api('/creator?name=' + encodeURIComponent(name)); } catch (e) { root.innerHTML = `<section class="cwrap" style="padding-top:140px">${errBox(e)}</section>`; return; }
     if (t !== token) return;
     document.title = `${c.displayName} · Kyoto Creators`;
-    const acc = c.accent || '#a855f7';
+    const acc = c.accent || '#808080';
     frame('creator', `<div class="chero" style="--ca:${acc}"><img class="cav" src="${head(c.name, 128)}" alt="">
         <div class="cinfo2"><h2>${esc(c.displayName)} ${c.plus ? '<i class="pluschip">Kyoto+</i>' : ''}${c.owner ? `<i class="ownchip">${icon('crown')} Owner</i>` : ''}</h2><span class="muted">@${esc(c.name)} · Level ${c.level} · joined ${c.joined ? new Date(c.joined).toLocaleDateString(undefined, { month: 'short', year: 'numeric' }) : '—'}</span>${c.bio ? `<p>${esc(c.bio)}</p>` : ''}
           <div class="cstats2"><div><b id="fcount">${fmt(c.followers)}</b><span>followers</span></div><div><b>${fmt(c.sales)}</b><span>sales</span></div><div><b>${fmt(c.items)}</b><span>in shop</span></div><div><b>${fmt(c.videos)}</b><span>videos</span></div></div></div>
@@ -335,9 +335,9 @@
   const loadImg = src => new Promise(res => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
   async function drawCard(cv, c) {
     const g = cv.getContext('2d'), W = 1200, H = 675;
-    const acc = c.accent || '#a855f7';
+    const acc = c.accent || '#808080';
     await document.fonts.ready;
-    const bg = g.createLinearGradient(0, 0, W, H); bg.addColorStop(0, '#0b0b12'); bg.addColorStop(1, '#14101f'); g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    const bg = g.createLinearGradient(0, 0, W, H); bg.addColorStop(0, '#0b0b12'); bg.addColorStop(1, '#1b1b1b'); g.fillStyle = bg; g.fillRect(0, 0, W, H);
     const glow = g.createRadialGradient(W * .8, H * .1, 0, W * .8, H * .1, 700); glow.addColorStop(0, acc + '66'); glow.addColorStop(1, 'transparent'); g.fillStyle = glow; g.fillRect(0, 0, W, H);
     // stars
     let sd = c.name.length * 97; const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
@@ -353,21 +353,21 @@
     const x0 = 420;
     g.font = '600 20px Inter, sans-serif'; g.fillStyle = acc; g.fillText(c.title.toUpperCase() + (c.owner ? ' · OWNER' : c.plus ? ' · KYOTO+' : c.staff ? ' · STAFF' : ''), x0, 170);
     g.fillStyle = '#fff'; g.font = `800 ${c.displayName.length > 12 ? 58 : 76}px Poppins, sans-serif`; g.fillText(c.displayName, x0, 248);
-    g.fillStyle = '#9aa0aa'; g.font = '500 22px Inter, sans-serif'; g.fillText('@' + c.name + (c.joined ? ' · since ' + new Date(c.joined).toLocaleDateString(undefined, { month: 'short', year: 'numeric' }) : ''), x0, 286);
+    g.fillStyle = '#afafaf'; g.font = '500 22px Inter, sans-serif'; g.fillText('@' + c.name + (c.joined ? ' · since ' + new Date(c.joined).toLocaleDateString(undefined, { month: 'short', year: 'numeric' }) : ''), x0, 286);
     // level ring
     const lx = W - 150, ly = 230, lr = 70;
     g.lineWidth = 12; g.strokeStyle = 'rgba(255,255,255,.1)'; g.beginPath(); g.arc(lx, ly, lr, 0, 6.283); g.stroke();
     g.strokeStyle = acc; g.lineCap = 'round'; g.beginPath(); g.arc(lx, ly, lr, -1.571, -1.571 + 6.283 * Math.min(1, c.into / c.need)); g.stroke(); g.lineCap = 'butt';
-    g.textAlign = 'center'; g.fillStyle = '#fff'; g.font = '800 52px Poppins, sans-serif'; g.fillText(c.level, lx, ly + 14); g.font = '600 15px Inter, sans-serif'; g.fillStyle = '#9aa0aa'; g.fillText('LEVEL', lx, ly + 40); g.textAlign = 'left';
+    g.textAlign = 'center'; g.fillStyle = '#fff'; g.font = '800 52px Poppins, sans-serif'; g.fillText(c.level, lx, ly + 14); g.font = '600 15px Inter, sans-serif'; g.fillStyle = '#afafaf'; g.fillText('LEVEL', lx, ly + 40); g.textAlign = 'left';
     // stats grid
     const st = [['Hours played', fmt(c.stats.hours)], ['Friends', fmt(c.stats.friends)], ['Best streak', c.stats.streak + (c.stats.streak === 1 ? ' day' : ' days')], ['Followers', fmt(c.stats.followers)], ['Sales', fmt(c.stats.sales)], ['Achievements', `${c.stats.achievements}/${c.stats.total}`]];
     st.forEach(([k, v], i) => {
       const x = x0 + (i % 3) * 245, y = 340 + Math.floor(i / 3) * 112;
       g.fillStyle = 'rgba(255,255,255,.05)'; roundRect(g, x, y, 228, 96, 18); g.fill(); g.strokeStyle = 'rgba(255,255,255,.08)'; g.lineWidth = 1.5; g.stroke();
-      g.fillStyle = '#fff'; g.font = '800 34px Poppins, sans-serif'; g.fillText(v, x + 20, y + 50); g.fillStyle = '#9aa0aa'; g.font = '500 17px Inter, sans-serif'; g.fillText(k, x + 20, y + 78);
+      g.fillStyle = '#fff'; g.font = '800 34px Poppins, sans-serif'; g.fillText(v, x + 20, y + 50); g.fillStyle = '#afafaf'; g.font = '500 17px Inter, sans-serif'; g.fillText(k, x + 20, y + 78);
     });
     if (c.rarest) { g.fillStyle = acc + '22'; roundRect(g, x0, 578, 718, 54, 16); g.fill(); g.fillStyle = '#fff'; g.font = '600 19px Inter, sans-serif'; g.fillText(`Rarest achievement: ${c.rarest.name}`, x0 + 20, 612); g.fillStyle = acc; g.textAlign = 'right'; g.fillText(`${c.rarest.rarity}% of players`, x0 + 698, 612); g.textAlign = 'left'; }
-    if (c.online) { g.fillStyle = '#3ddc84'; g.beginPath(); g.arc(x0 + 8, 318, 7, 0, 6.3); g.fill(); g.fillStyle = '#3ddc84'; g.font = '600 17px Inter, sans-serif'; g.fillText('Playing now', x0 + 24, 324); }
+    if (c.online) { g.fillStyle = '#c5c5c5'; g.beginPath(); g.arc(x0 + 8, 318, 7, 0, 6.3); g.fill(); g.fillStyle = '#c5c5c5'; g.font = '600 17px Inter, sans-serif'; g.fillText('Playing now', x0 + 24, 324); }
   }
   function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
 

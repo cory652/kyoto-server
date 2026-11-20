@@ -121,5 +121,103 @@
     return gzip(write(root, 'Schematic'));
   }
 
-  window.KS_NBT = { write, gzip, litematic, schem, parseState, T, N };
+  /* ============================================ reading (for importing schematics) ============================================ */
+  // Plain values back: compounds -> objects, lists -> arrays, long -> Number, long arrays -> { longs: Uint32Array [lo, hi, ...] }
+  function read(bytes) {
+    const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength), td = new TextDecoder();
+    let p = 0;
+    const str = () => { const n = dv.getUint16(p); p += 2; const s = td.decode(u8.subarray(p, p + n)); p += n; return s; };
+    function val(t) {
+      switch (t) {
+        case 1: return dv.getInt8(p++);
+        case 2: { const v = dv.getInt16(p); p += 2; return v; }
+        case 3: { const v = dv.getInt32(p); p += 4; return v; }
+        case 4: { const hi = dv.getInt32(p), lo = dv.getUint32(p + 4); p += 8; return hi * 4294967296 + lo; }
+        case 5: { const v = dv.getFloat32(p); p += 4; return v; }
+        case 6: { const v = dv.getFloat64(p); p += 8; return v; }
+        case 7: { const n = dv.getInt32(p); p += 4; const v = u8.slice(p, p + n); p += n; return v; }
+        case 8: return str();
+        case 9: { const of = u8[p++], n = dv.getInt32(p); p += 4; const a = []; for (let i = 0; i < n; i++) a.push(val(of)); return a; }
+        case 10: { const o = {}; for (;;) { const ty = u8[p++]; if (ty === 0) break; const k = str(); o[k] = val(ty); } return o; }
+        case 11: { const n = dv.getInt32(p); p += 4; const a = new Int32Array(n); for (let i = 0; i < n; i++) { a[i] = dv.getInt32(p); p += 4; } return a; }
+        case 12: { const n = dv.getInt32(p); p += 4; const a = new Uint32Array(n * 2); for (let i = 0; i < n; i++) { a[i * 2 + 1] = dv.getUint32(p); a[i * 2] = dv.getUint32(p + 4); p += 8; } return { longs: a }; }
+        default: throw new Error('Broken NBT (tag ' + t + ')');
+      }
+    }
+    const t = u8[p++]; if (t !== 10) throw new Error('Not an NBT file');
+    str();
+    return val(10);
+  }
+  async function gunzipMaybe(bytes) {
+    const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    if (u8[0] === 0x1f && u8[1] === 0x8b) return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+    return u8;
+  }
+  const stateStr = c => { const n = c.Name || 'minecraft:air', pr = c.Properties || {}; const ks = Object.keys(pr).sort(); return ks.length ? `${n}[${ks.map(k => k + '=' + pr[k]).join(',')}]` : n; };
+
+  /**
+   * Any schematic (.litematic, .schem, structure .nbt) -> the same shape as a .kybuild, so the viewer can play it.
+   * The "build" is put together layer by layer from the bottom, so you can watch how it would go up.
+   */
+  function toBuild(root, fileName) {
+    const blocks = []; // [x, y, z, state]
+    let name = (fileName || 'Schematic').replace(/\.(litematic|schem|schematic|nbt)$/i, ''), author = '', kind = '';
+    let dataVersion = root.MinecraftDataVersion || root.DataVersion || 0;
+    if (root.Regions) {
+      kind = 'Litematica';
+      const m = root.Metadata || {}; if (m.Name) name = m.Name; author = m.Author || '';
+      for (const r of Object.values(root.Regions)) {
+        const pos = r.Position || { x: 0, y: 0, z: 0 }, sz = r.Size || { x: 0, y: 0, z: 0 };
+        const sx = Math.abs(sz.x), sy = Math.abs(sz.y), sz2 = Math.abs(sz.z);
+        const ox = pos.x + (sz.x < 0 ? sz.x + 1 : 0), oy = pos.y + (sz.y < 0 ? sz.y + 1 : 0), oz = pos.z + (sz.z < 0 ? sz.z + 1 : 0);
+        const pal = (r.BlockStatePalette || []).map(stateStr);
+        const words = (r.BlockStates && r.BlockStates.longs) || new Uint32Array(0);
+        const bits = Math.max(2, Math.ceil(Math.log2(Math.max(1, pal.length)))), mask = (1 << bits) - 1, vol = sx * sy * sz2;
+        for (let i = 0; i < vol; i++) {
+          const bp = i * bits, w = bp >>> 5, b = bp & 31;
+          let v = words[w] >>> b;
+          if (b + bits > 32) v |= words[w + 1] << (32 - b);
+          v &= mask;
+          if (!v) continue;
+          const x = i % sx, z = Math.floor(i / sx) % sz2, y = Math.floor(i / (sx * sz2));
+          const st = pal[v]; if (st && !/(^|:)(air|cave_air|void_air)$/.test(st)) blocks.push([ox + x, oy + y, oz + z, st]);
+        }
+      }
+    } else if (root.Schematic || root.Palette || root.BlockData) {
+      kind = 'WorldEdit';
+      const s = root.Schematic || root, W = s.Width, H = s.Height, L = s.Length;
+      const B = s.Blocks || s; // v3 keeps them under Blocks
+      const palObj = B.Palette || {}, data = B.Data || B.BlockData || new Uint8Array(0);
+      const pal = []; for (const [k, v] of Object.entries(palObj)) pal[v] = k;
+      if (s.Metadata && s.Metadata.Name) name = s.Metadata.Name;
+      dataVersion = s.DataVersion || dataVersion;
+      let p = 0;
+      for (let i = 0; i < W * H * L && p < data.length; i++) {
+        let v = 0, sh = 0, b; do { b = data[p++]; v |= (b & 0x7f) << sh; sh += 7; } while (b & 0x80);
+        const st = pal[v]; if (!st || /(^|:)(air|cave_air|void_air)(\[|$)/.test(st)) continue;
+        blocks.push([i % W, Math.floor(i / (W * L)), Math.floor(i / W) % L, st]);
+      }
+    } else if (root.blocks && (root.palette || root.palettes)) {
+      kind = 'Structure';
+      const pal = (root.palette || root.palettes[0]).map(stateStr);
+      for (const b of root.blocks) { const st = pal[b.state]; if (st && !/(^|:)(air|cave_air|void_air|structure_void)$/.test(st)) blocks.push([b.pos[0], b.pos[1], b.pos[2], st]); }
+    } else throw new Error('That isn\'t a schematic Kyoto knows (.litematic, .schem or structure .nbt)');
+    if (!blocks.length) throw new Error('The schematic is empty');
+    if (blocks.length > 3000000) throw new Error('That schematic is too big to preview (over 3 million blocks)');
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+    for (const [x, y, z] of blocks) { if (x < x0) x0 = x; if (y < y0) y0 = y; if (z < z0) z0 = z; if (x > x1) x1 = x; if (y > y1) y1 = y; if (z > z1) z1 = z; }
+    const palette = [{ s: 'minecraft:air', c: 0 }], idx = new Map([['minecraft:air', 0]]);
+    const shape = window.KS_TEX ? KS_TEX.shape : () => null;
+    const P = s => { let i = idx.get(s); if (i === undefined) { i = palette.length; idx.set(s, i); const e = { s, c: 0 }; const b = shape(s); if (b) e.b = b; if (/lantern|torch|glowstone|sea_lantern|shroomlight|froglight|lamp|fire|lava|beacon|end_rod|candle/.test(s)) e.l = 14; palette.push(e); } return i; };
+    // build order: bottom layer first, then outward from the middle, like a person would build it
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    blocks.sort((a, b) => a[1] - b[1] || (Math.abs(a[0] - cx) + Math.abs(a[2] - cz)) - (Math.abs(b[0] - cx) + Math.abs(b[2] - cz)));
+    const events = [], final = [];
+    blocks.forEach(([x, y, z, st], i) => { const p = P(st); events.push([i * 300, x - x0, y - y0, z - z0, p]); final.push([x - x0, y - y0, z - z0, p]); });
+    return { format: 'kybuild', version: 1, name, author: author || kind + ' schematic', mode: 'schematic', kind, mc: '', dataVersion: dataVersion || 4440, created: Date.now(),
+      duration: blocks.length * 300, origin: [0, 0, 0], size: [x1 - x0 + 1, y1 - y0 + 1, z1 - z0 + 1], palette, start: [], events, final, player: [], stats: { placed: blocks.length, broken: 0 } };
+  }
+  async function importSchematic(bytes, fileName) { return toBuild(read(await gunzipMaybe(bytes)), fileName); }
+
+  window.KS_NBT = { write, gzip, litematic, schem, parseState, read, gunzipMaybe, importSchematic, T, N };
 })();

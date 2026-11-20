@@ -11,7 +11,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Playfair+Display:wght@600;800&family=Silkscreen&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/site.css?v=12">
-<link rel="stylesheet" href="/assets/home.css?v=9">
+<link rel="stylesheet" href="/assets/home.css?v=10">
+<link rel="stylesheet" href="/assets/more.css?v=1">
+<link rel="stylesheet" href="/assets/mono.css?v=1">
+<script>try { if (localStorage.getItem('kyoto.mode') === 'light') document.documentElement.classList.add('light'); } catch (e) {}</script>
 </head>
 <body>
 <div id="sky"><div id="art"></div><canvas id="stars"></canvas><div class="vignette"></div><div class="grain"></div></div>
@@ -61,7 +64,7 @@
     <div class="h2-center">
       <div class="h2-logo"><span class="ring r1"></span><span class="ring r2"></span><img class="logo-k" src="/img/logos/logo_k_starry.png" alt="Kyoto"></div>
       <h1 class="h2-title"><span>KYOTO</span> <span>CLIENT</span></h1>
-      <p class="h2-sub">The best client is just a mod · Minecraft <b id="heroMc">26.3</b></p>
+      <p class="h2-sub">The best client is just a mod. Minecraft <b id="heroMc">26.3</b>.</p>
       <div class="h2-cta">
         <a class="btn big glow" href="/download" data-link>__I_download__ Download</a>
         <a class="btn big plus" href="#plus" data-scroll>__I_sparkles__ Kyoto+</a>
@@ -73,6 +76,7 @@
         <div><b>0</b><span>ads, ever</span></div>
       </div>
     </div>
+    <div class="scroll-cue" aria-hidden="true"></div>
   </section>
 
   <section class="tiles" id="tiles">
@@ -215,6 +219,7 @@
     </aside>
     <section class="hub-main">
       <header class="hub-top"><div><h2 id="hubTitle"># chat</h2><small id="hubSub">Talk with every Kyoto player, in game, here and on Discord.</small></div><div class="hub-top-r" id="hubTopR"></div></header>
+      <div class="chbar" id="chBar" hidden></div>
       <div class="pinbar" id="pinBar" hidden></div>
       <div class="hub-feed" id="hubFeed"></div>
       <div class="hub-view" id="hubView" hidden></div>
@@ -245,6 +250,7 @@
           <div class="hc-box"><div class="hc-preview" id="hubPreview" hidden></div><input id="hubInput" maxlength="300" placeholder="Message #chat"></div>
           <button type="button" class="hc-attach" id="hubStk" title="Stickers">__I_smile__</button>
           <button type="button" class="hc-attach" id="hubPoll" title="Make a poll">__I_poll__</button>
+          <button type="button" class="hc-attach" id="hubMic" title="Voice message (click to start, click again to send)">__I_mic__</button>
           <button class="hc-send" title="Send">__I_arrow__</button>
         </div>
         <div class="stkpop" id="stkPop" hidden></div>
@@ -310,6 +316,7 @@
 <!-- shared footer (home, news, store, download, studio) -->
 <!-- ======================= COMMUNITY ======================= -->
 <main id="page-community" class="page subpage commpage" hidden><div id="commRoot"></div></main>
+<main id="page-more" class="page subpage commpage morepage" hidden><div id="moreRoot"></div></main>
 
 <div id="siteFoot">
 <section class="cta">
@@ -480,10 +487,11 @@
 <div id="toasts"></div>
 <script src="/assets/icons.js?v=14"></script>
 <script src="/assets/room.js?v=1"></script>
-<script src="/assets/site.js?v=19"></script>
+<script src="/assets/site.js?v=20"></script>
 <script src="/assets/home.js?v=2"></script>
 <script src="/assets/pages.js?v=6"></script>
-<script src="/assets/hub.js?v=4"></script>
+<script src="/assets/hub.js?v=5"></script>
 <script src="/assets/community.js?v=1"></script>
+<script src="/assets/more.js?v=1"></script>
 </body>
 </html>

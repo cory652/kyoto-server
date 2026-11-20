@@ -66,7 +66,7 @@
 
   /* ---------------- hero: slow parallax + logo tilt (only while the hero is on screen) ---------------- */
   const art = $('#heroArt'), logo = $('.h2-logo');
-  const setArt = () => { art.style.backgroundImage = `url(/img/${theme}.webp)`; };
+  const setArt = () => { art.style.backgroundImage = 'none'; };
   setArt();
   const tp = $('#themePill'); if (tp) tp.addEventListener('click', () => setTimeout(setArt, 50));
   function hero() {

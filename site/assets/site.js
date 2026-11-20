@@ -31,32 +31,29 @@ async function api(path, opts = {}) {
   return data;
 }
 
-/* ===================== seasons: background + logo follow each other ===================== */
-const THEMES = ['starry', 'winter', 'spring', 'summer', 'fall', 'cozy', 'halloween', 'thanksgiving', 'christmas', 'newyear', 'valentines', 'easter'];
-const TINT = { starry: '230,232,240', winter: '191,227,255', spring: '255,183,213', summer: '255,211,107', fall: '255,154,77', cozy: '255,194,122',
-  halloween: '255,138,42', thanksgiving: '255,176,80', christmas: '255,120,120', newyear: '255,224,138', valentines: '255,122,168', easter: '201,168,255' };
+/* ===================== holidays: only the torii changes ===================== */
+const THEMES = ['starry', 'newyear', 'valentines', 'easter', 'halloween', 'thanksgiving', 'christmas'];
 function season() {
-  const d = new Date(), m = d.getMonth() + 1, day = d.getDate();
+  const d = new Date(), m = d.getMonth() + 1, day = d.getDate(), y = d.getFullYear();
   if (m === 12 && day >= 27 || m === 1 && day <= 2) return 'newyear';
-  if (m === 12) return 'christmas';
+  if (m === 12 && day <= 26) return 'christmas';
   if (m === 2 && day >= 7 && day <= 14) return 'valentines';
   if (m === 10 && day >= 15) return 'halloween';
-  if (m === 11 && day <= 28) return 'thanksgiving';
-  if (m >= 3 && m <= 5) return 'spring'; if (m >= 6 && m <= 8) return 'summer'; if (m >= 9 && m <= 11) return 'fall';
-  return 'winter';
+  const f = new Date(y, 10, 1).getDay(), tg = 1 + ((4 - f + 7) % 7) + 21;
+  if (m === 11 && day >= tg - 4 && day <= tg + 3) return 'thanksgiving';
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, dd = Math.floor(b / 4), ee = b % 4, ff = Math.floor((b + 8) / 25), gg = Math.floor((b - ff + 1) / 3), h = (19 * a + b - dd - gg + 15) % 30, ii = Math.floor(c / 4), k = c % 4, l = (32 + 2 * ee + 2 * ii - h - k) % 7, mm = Math.floor((a + 11 * h + 22 * l) / 451);
+  const e = new Date(y, Math.floor((h + l - 7 * mm + 114) / 31) - 1, ((h + l - 7 * mm + 114) % 31) + 1);
+  if (d >= e - 6 * 864e5 && d <= +e + 2 * 864e5) return 'easter';
+  return 'starry';
 }
-let theme = localStorage.getItem('kyoto.theme') || season();
-function setTheme(t, save) {
-  theme = t; if (save) localStorage.setItem('kyoto.theme', t);
-  const art = $('#art'); art.style.opacity = 0;
-  const img = new Image(); img.src = `/img/${t}.webp`;
-  img.onload = () => { art.style.backgroundImage = `url(/img/${t}.webp)`; art.style.opacity = 1; };
-  $$('.logo-k').forEach(l => { l.style.transition = 'opacity .4s'; l.style.opacity = 0; setTimeout(() => { l.src = `/img/logos/logo_k_${t}.png`; l.style.opacity = 1; }, 300); });
-  document.documentElement.style.setProperty('--tint', TINT[t] || TINT.starry);
-  const pill = $('#themePill'); if (pill) pill.textContent = `${t[0].toUpperCase() + t.slice(1)} theme · change`;
+let theme = season();
+function setTheme(t) {
+  theme = THEMES.includes(t) ? t : 'starry';
+  $$('.logo-k').forEach(l => { l.src = `/img/logos/logo_k_${theme}.png`; });
+  document.documentElement.style.setProperty('--tint', '235,235,238');
+  const pill = $('#themePill'); if (pill) { pill.textContent = theme === 'starry' ? '' : ({ newyear: 'Happy New Year', valentines: "Happy Valentine's", easter: 'Happy Easter', halloween: 'Happy Halloween', thanksgiving: 'Happy Thanksgiving', christmas: 'Merry Christmas' })[theme]; pill.hidden = theme === 'starry'; }
 }
 setTheme(theme);
-$('#themePill').onclick = () => setTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length], true);
 
 /* ===================== starfield + shooting stars ===================== */
 // Stars are painted ONCE (no per-frame redraw, nothing moves on scroll or mouse).
@@ -116,13 +113,18 @@ addEventListener('scroll', () => { if (navTick) return; navTick = true; requestA
 /* ===================== router ===================== */
 function route() {
   const p = location.pathname;
-  const user = /^\/u\/([A-Za-z0-9_]{1,16})\/?$/.exec(p) || (new URLSearchParams(location.search).get('u') ? [0, new URLSearchParams(location.search).get('u')] : null);
-  const edit = p.startsWith('/edit'), mod = p.startsWith('/mod');
+  const more = window.KY_MORE_PATHS && window.KY_MORE_PATHS.test(p);
+  const KNOWN = /^\/(edit|mod|u|download|features|profile|news|changelog|store|cosmetics|hub|rooms|studio|creators|creator|leaderboards|skins|wishlist|invite|status|card|achievements|overlay|builder|build|timelapse|admin)(\/|$)/;
+  const vanity = !more && !KNOWN.test(p) && /^\/([A-Za-z0-9_]{3,16})\/?$/.exec(p);
+  const user = /^\/u\/([A-Za-z0-9_]{1,16})\/?$/.exec(p) || (vanity ? vanity : null) || (new URLSearchParams(location.search).get('u') ? [0, new URLSearchParams(location.search).get('u')] : null);
+  const edit = p.startsWith('/edit'), mod = p.startsWith('/mod') && !more;
   const sub = /^\/(news|changelog|store|cosmetics|download|studio|hub|rooms)(\/|$)/.exec(p);
   const comm = /^\/(creators|creator|leaderboards|achievements|skins|wishlist|invite|status|card)(\/|$)/.test(p);
   const page = sub ? ({ changelog: 'news', cosmetics: 'store', rooms: 'hub' }[sub[1]] || sub[1]) : null;
-  $('#page-home').hidden = !!user || edit || mod || !!page || comm;
+  $('#page-home').hidden = !!user || edit || mod || !!page || comm || more;
   $('#page-community').hidden = !comm;
+  const pm = $('#page-more'); if (pm) pm.hidden = !more;
+  if (more && window.openMore) window.openMore(p);
   if (comm) { document.title = 'Kyoto Community'; if (window.openCommunity) window.openCommunity(p); }
   for (const n of ['news', 'store', 'download', 'studio', 'hub']) { const el = $('#page-' + n); if (el) el.hidden = page !== n; }
   const foot = $('#siteFoot'); if (foot) foot.hidden = !!user || edit || mod || page === 'hub';
@@ -190,8 +192,8 @@ setInterval(() => { const v = $('#mnVideo'); if (!v || !v.duration) return; $('.
 })();
 
 // capes: placeholders until the real capes are added (drop PNGs in /media/capes and list them here)
-const CAPES = [['Starry', 'linear-gradient(170deg,#1b1f3a,#07070c 70%)'], ['Sakura', 'linear-gradient(170deg,#ffb7d5,#7a3a64)'], ['Ember', 'linear-gradient(170deg,#ffb050,#5a1a10)'],
-  ['Frost', 'linear-gradient(170deg,#e6f3ff,#3a5a8a)'], ['Midnight', 'linear-gradient(170deg,#6a4cff,#120a2a)']];
+const CAPES = [['Starry', 'linear-gradient(170deg,#2a2a2a,#07070c 70%)'], ['Sakura', 'linear-gradient(170deg,#dadada,#575757)'], ['Ember', 'linear-gradient(170deg,#cbcbcb,#313131)'],
+  ['Frost', 'linear-gradient(170deg,#ffffff,#636363)'], ['Midnight', 'linear-gradient(170deg,#6c6c6c,#171717)']];
 $('#capeRow').innerHTML = CAPES.map(([n, bg]) => `<div class="cape-wrap"><div class="cape" style="background:${bg}"></div>${esc(n)}</div>`).join('');
 
 // videos only play while on screen (saves a lot of CPU/GPU)
@@ -222,18 +224,18 @@ const FONTS = { poppins: "'Poppins', sans-serif", inter: "'Inter', sans-serif", 
 const CARDS = ['glass', 'solid', 'outline', 'none'];
 /* profile themes: one click sets colours, font, card and background effect together */
 const PTHEMES = {
-  sakura: { n: 'Sakura', accent: '#ff8fb8', textColor: '#fff4f8', font: 'poppins', bgEffect: 3, nameEffect: 1, cardStyle: 0, g: ['#3a1a2a', '#7a3a58', '#ffb7d5'] },
-  midnight: { n: 'Midnight', accent: '#6b8bff', textColor: '#e8ecff', font: 'inter', bgEffect: 6, nameEffect: 1, cardStyle: 0, g: ['#05060f', '#141a3a', '#2a3a7a'] },
-  neon: { n: 'Neon', accent: '#39ffb0', textColor: '#eafff6', font: 'mono', bgEffect: 5, nameEffect: 2, cardStyle: 2, g: ['#05010d', '#1a0533', '#00ffa3'] },
-  ocean: { n: 'Ocean', accent: '#4ad8ff', textColor: '#eafaff', font: 'poppins', bgEffect: 4, nameEffect: 3, cardStyle: 0, g: ['#021526', '#063a5c', '#1fa3c7'] },
-  forest: { n: 'Forest', accent: '#7ee2a0', textColor: '#f0fff4', font: 'serif', bgEffect: 5, nameEffect: 1, cardStyle: 0, g: ['#07140c', '#16351f', '#3f7a4a'] },
-  sunset: { n: 'Sunset', accent: '#ff9a4d', textColor: '#fff6ec', font: 'poppins', bgEffect: 1, nameEffect: 1, cardStyle: 0, g: ['#2a0f2e', '#a3345a', '#ffae5a'] },
+  sakura: { n: 'Sakura', accent: '#bababa', textColor: '#fff4f8', font: 'poppins', bgEffect: 3, nameEffect: 1, cardStyle: 0, g: ['#2c2c2c', '#565656', '#dadada'] },
+  midnight: { n: 'Midnight', accent: '#9c9c9c', textColor: '#ffffff', font: 'inter', bgEffect: 6, nameEffect: 1, cardStyle: 0, g: ['#05060f', '#242424', '#464646'] },
+  neon: { n: 'Neon', accent: '#e1e1e1', textColor: '#ffffff', font: 'mono', bgEffect: 5, nameEffect: 2, cardStyle: 2, g: ['#05010d', '#161616', '#d4d4d4'] },
+  ocean: { n: 'Ocean', accent: '#cecece', textColor: '#ffffff', font: 'poppins', bgEffect: 4, nameEffect: 3, cardStyle: 0, g: ['#1b1b1b', '#3b3b3b', '#999999'] },
+  forest: { n: 'Forest', accent: '#dadada', textColor: '#ffffff', font: 'serif', bgEffect: 5, nameEffect: 1, cardStyle: 0, g: ['#07140c', '#373737', '#777777'] },
+  sunset: { n: 'Sunset', accent: '#bababa', textColor: '#ffffff', font: 'poppins', bgEffect: 1, nameEffect: 1, cardStyle: 0, g: ['#202020', '#5a5a5a', '#cacaca'] },
   mono: { n: 'Mono', accent: '#e8eaf0', textColor: '#ffffff', font: 'inter', bgEffect: 0, nameEffect: 0, cardStyle: 1, g: ['#0b0b0d', '#18181c', '#2a2a30'] },
-  candy: { n: 'Candy', accent: '#ff7ad9', textColor: '#ffffff', font: 'pixel', bgEffect: 1, nameEffect: 2, cardStyle: 0, g: ['#2a0f3a', '#6a2a8a', '#ff9ad0'] },
-  aurora: { n: 'Aurora', accent: '#7affd8', textColor: '#f0fffb', font: 'poppins', bgEffect: 6, nameEffect: 3, cardStyle: 0, g: ['#020a14', '#0a3a4a', '#5affb8'] },
-  ember: { n: 'Ember', accent: '#ff5d3a', textColor: '#fff1ea', font: 'inter', bgEffect: 5, nameEffect: 1, cardStyle: 1, g: ['#120302', '#3a0d06', '#a32a10'] },
-  retro: { n: 'Retro', accent: '#ffd36b', textColor: '#fff8e6', font: 'pixel', bgEffect: 1, nameEffect: 4, cardStyle: 2, g: ['#1a0f2e', '#3a1f5c', '#ff5d9e'] },
-  frost: { n: 'Frost', accent: '#bfe3ff', textColor: '#ffffff', font: 'poppins', bgEffect: 2, nameEffect: 1, cardStyle: 0, g: ['#0a1422', '#1c3550', '#9ccfff'] }
+  candy: { n: 'Candy', accent: '#adadad', textColor: '#ffffff', font: 'pixel', bgEffect: 1, nameEffect: 2, cardStyle: 0, g: ['#212121', '#4a4a4a', '#c4c4c4'] },
+  aurora: { n: 'Aurora', accent: '#f3f3f3', textColor: '#ffffff', font: 'poppins', bgEffect: 6, nameEffect: 3, cardStyle: 0, g: ['#111111', '#3b3b3b', '#eaeaea'] },
+  ember: { n: 'Ember', accent: '#8b8b8b', textColor: '#ffffff', font: 'inter', bgEffect: 5, nameEffect: 1, cardStyle: 1, g: ['#0e0e0e', '#1f1f1f', '#4d4d4d'] },
+  retro: { n: 'Retro', accent: '#e8e8e8', textColor: '#ffffff', font: 'pixel', bgEffect: 1, nameEffect: 4, cardStyle: 2, g: ['#1d1d1d', '#333333', '#939393'] },
+  frost: { n: 'Frost', accent: '#f0f0f0', textColor: '#ffffff', font: 'poppins', bgEffect: 2, nameEffect: 1, cardStyle: 0, g: ['#1c1c1c', '#3c3c3c', '#dadada'] }
 };
 const ROOM_NAMES = { christmas: 'Christmas', bedroom: 'Bedroom', garden: 'Garden', beach: 'Beach', space: 'Space station', halloween: 'Halloween', gamer: 'Gamer den', cafe: 'Cafe' };
 async function skinFor(p) {
@@ -308,8 +310,8 @@ function effects(c, type, accent) {
     for (const q of parts) {
       if (type === 1 || type === 6) { g.globalAlpha = .25 + .75 * Math.abs(Math.sin(now / 900 * (.5 + q.s) + q.p)); g.fillStyle = '#fff'; g.fillRect(q.x, q.y, q.s > .85 ? 2.4 : 1.4, q.s > .85 ? 2.4 : 1.4); }
       else if (type === 2) { q.y += .6 + q.s; q.x += Math.sin(now / 900 + q.p) * .4; g.globalAlpha = .85; g.fillStyle = '#fff'; g.beginPath(); g.arc(q.x, q.y, 1 + q.s * 2, 0, 6.3); g.fill(); }
-      else if (type === 3) { q.y += .5 + q.s * .8; q.x += .5 + Math.sin(now / 700 + q.p) * .6; g.globalAlpha = .9; g.fillStyle = q.s > .5 ? '#ffb7d5' : '#ffd6e8'; g.beginPath(); g.ellipse(q.x, q.y, 5, 3, now / 900 + q.p, 0, 6.3); g.fill(); }
-      else if (type === 4) { q.y += 9 + q.s * 6; q.x -= 1; g.globalAlpha = .4; g.strokeStyle = '#a8c8ff'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(q.x, q.y); g.lineTo(q.x - 1.5, q.y + 12); g.stroke(); }
+      else if (type === 3) { q.y += .5 + q.s * .8; q.x += .5 + Math.sin(now / 700 + q.p) * .6; g.globalAlpha = .9; g.fillStyle = q.s > .5 ? '#dadada' : '#f3f3f3'; g.beginPath(); g.ellipse(q.x, q.y, 5, 3, now / 900 + q.p, 0, 6.3); g.fill(); }
+      else if (type === 4) { q.y += 9 + q.s * 6; q.x -= 1; g.globalAlpha = .4; g.strokeStyle = '#d7d7d7'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(q.x, q.y); g.lineTo(q.x - 1.5, q.y + 12); g.stroke(); }
       else if (type === 5) { q.x += Math.cos(now / 1500 + q.p) * .5; q.y += Math.sin(now / 1300 + q.p * 2) * .5; g.globalAlpha = .4 + .6 * Math.abs(Math.sin(now / 400 + q.p * 3)); g.fillStyle = accent; g.shadowColor = accent; g.shadowBlur = 12; g.beginPath(); g.arc(q.x, q.y, 2.5, 0, 6.3); g.fill(); g.shadowBlur = 0; }
       if (q.y > H + 10) { q.y = -10; q.x = Math.random() * W; } if (q.x > W + 10) q.x = -10; if (q.x < -10) q.x = W + 10;
     }
@@ -331,7 +333,7 @@ function mediaUrls(p, name, bust = '') {
 }
 
 // landing: a sample profile in the phone
-renderProfile($('#pfMini'), { name: 'heffm', displayName: 'hef', bio: 'hef the man', location: 'Hef Town', badges: ['owner', 'kyoto'], tags: ['Builder'], links: ['youtube.com/@hef', 'tiktok.com/@hef', 'discord.gg/kyoto'], accent: '#ff5d7a', nameEffect: 1, bgEffect: 6, views: 245 },
+renderProfile($('#pfMini'), { name: 'heffm', displayName: 'hef', bio: 'hef the man', location: 'Hef Town', badges: ['owner', 'kyoto'], tags: ['Builder'], links: ['youtube.com/@hef', 'tiktok.com/@hef', 'discord.gg/kyoto'], accent: '#909090', nameEffect: 1, bgEffect: 6, views: 245 },
   { media: { image: '/media/sky-night.webp' }, static: true, noLinks: true });
 $('#pfMini .pr-dim').style.opacity = .35;
 
@@ -346,6 +348,7 @@ async function openUser(name) {
     const enter = document.createElement('div'); enter.className = 'pr-enter'; enter.innerHTML = `<span>click to enter</span>`; root.appendChild(enter);
     enter.onclick = () => { enter.classList.add('gone'); if (root._audio) root._audio.play().catch(() => {}); };
     if (p.cursorTrail) cursorTrail(root, p.accent);
+    if (window.KY_PROFILE_EXTRAS) window.KY_PROFILE_EXTRAS(root, p.name || name);
   } catch (e) {
     root.innerHTML = `<div class="pr-bg"></div><div class="pr-404"><h2>${e.status === 404 ? 'No profile yet' : 'Couldn\'t load this profile'}</h2><p class="muted">${e.status === 404 ? esc(name) + ' hasn\'t made a Kyoto profile.' : esc(e.message)}</p><a class="btn" href="/" data-link>Back to Kyoto</a></div>`;
   }
@@ -359,7 +362,7 @@ function cursorTrail(root, color) {
 /* ===================== editor /edit ===================== */
 let ME = null, P = {}, SAVED = '', MEDIA = {};
 const FIELDS = ['displayName', 'bio', 'location', 'tags', 'links', 'accent', 'textColor', 'layout', 'cardStyle', 'cardOpacity', 'bgDim', 'font', 'showViews', 'avatarGlow', 'nameEffect', 'bgEffect', 'cursorTrail', 'typewriterBio', 'theme', 'room'];
-const DEF = { displayName: '', bio: '', location: '', tags: [], links: [], accent: '#a855f7', textColor: '#ffffff', layout: 0, cardStyle: 0, cardOpacity: 62, bgDim: 45, font: 'poppins', showViews: true, avatarGlow: true, nameEffect: 1, bgEffect: 1, cursorTrail: false, typewriterBio: false, theme: null, room: null };
+const DEF = { displayName: '', bio: '', location: '', tags: [], links: [], accent: '#808080', textColor: '#ffffff', layout: 0, cardStyle: 0, cardOpacity: 62, bgDim: 45, font: 'poppins', showViews: true, avatarGlow: true, nameEffect: 1, bgEffect: 1, cursorTrail: false, typewriterBio: false, theme: null, room: null };
 
 async function openEditor() {
   const q = new URLSearchParams(location.search);
@@ -427,7 +430,7 @@ function bindForm() {
   choices('#c_cardStyle', ['Glass', 'Solid', 'Outline', 'None'], 'cardStyle', i => `<div class="mini"><div class="m-card" style="${['backdrop-filter:blur(4px)', 'background:#16171c', 'background:transparent;border:1.5px solid ' + P.accent, 'background:none'][i]}"></div><div class="m-av"></div><div class="m-l1"></div><div class="m-l2"></div></div>`);
   choices('#c_nameEffect', ['None', 'Glow', 'Rainbow', 'Wave', 'Typewriter'], 'nameEffect');
   choices('#c_bgEffect', ['None', 'Stars', 'Snow', 'Sakura', 'Rain', 'Fireflies', 'Shooting stars'], 'bgEffect');
-  $('#swatches').innerHTML = ['#a855f7', '#ff5d7a', '#ff9a4d', '#ffd36b', '#7ee2a0', '#5cc8ff', '#6b8bff', '#e8eaf0', '#ffb7d5'].map(c => `<button style="background:${c}" data-c="${c}" title="${c}"></button>`).join('');
+  $('#swatches').innerHTML = ['#808080', '#909090', '#bababa', '#e8e8e8', '#dadada', '#c6c6c6', '#9c9c9c', '#e8eaf0', '#dadada'].map(c => `<button style="background:${c}" data-c="${c}" title="${c}"></button>`).join('');
   $$('#swatches button').forEach(b => b.onclick = () => { P.accent = b.dataset.c; v('accent').value = P.accent; $('#cv_accent').textContent = P.accent; refresh(); });
   renderTags(); renderLinks(); renderRoomTab();
 }

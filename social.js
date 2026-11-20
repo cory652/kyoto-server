@@ -135,6 +135,8 @@ module.exports = function social(ctx) {
       : { id: m.id, uuid: m.uuid, name: m.uuid ? nameOf(m.uuid) : '', owner: m.uuid ? isOwnerUuid(m.uuid) : false, staff: m.uuid ? isStaff(m.uuid) : false, plus: m.uuid ? isPlus(m.uuid) : false, text: m.text || '', img: m.img || null, at: m.at, me: m.uuid === me };
     if (m.sys) { o.sys = true; if (m.streak) o.streak = m.streak; }
     if (m.sticker) o.sticker = m.sticker;
+    if (m.voice) o.voice = m.voice;
+    if (m.ch) o.ch = m.ch;
     if (m.gift) o.gift = m.gift;
     if (m.trade) o.trade = m.trade;
     if (m.reply) o.reply = { id: m.reply.id, name: m.reply.dname || nameOf(m.reply.uuid), text: m.reply.text || '', sticker: m.reply.sticker || null, img: !!m.reply.img };
@@ -176,19 +178,59 @@ module.exports = function social(ctx) {
   const whereOf = (box, viewer) => box.kind === 'chat' ? 'chat' : box.kind === 'g' ? 'g:' + box.g.id : 'dm:' + nameOf(viewer === box.other ? (box.key.split(':').find(u => u !== box.other) || '') : box.other);
 
   // ---- public chat (replaces the simpler versions) ----
+  // Server channels: "" is General (bridged to Discord); any other value is a Minecraft server's own channel ("donutsmp.net").
+  const chOf = v => { const c = normIp(String(v || '')).replace(/^(play|mc|join|hub)\./, '').slice(0, 60); return /^[a-z0-9.\-]+(:\d+)?$/.test(c) ? c : ''; };
   routes['GET /chat'] = async (req, res, body, me) => {
-    const since = Number(q(req).get('since')) || 0, box = boxOf(me, 'chat');
+    const since = Number(q(req).get('since')) || 0, box = boxOf(me, 'chat'), ch = chOf(q(req).get('ch'));
     ensureIds(H.chat);
-    const msgs = H.chat.filter(m => m.at > since || (m.upd || 0) > since).slice(-100).map(m => msgOut(m, me, box));
-    const pins = H.chatPins.map(id => H.chat.find(m => m.id === id)).filter(Boolean).map(m => msgOut(m, me, box));
-    send(res, 200, { messages: msgs, pins, now: now() });
+    const msgs = H.chat.filter(m => (m.ch || '') === ch && (m.at > since || (m.upd || 0) > since)).slice(-100).map(m => msgOut(m, me, box));
+    const pins = ch ? [] : H.chatPins.map(id => H.chat.find(m => m.id === id)).filter(Boolean).map(m => msgOut(m, me, box));
+    send(res, 200, { messages: msgs, pins, now: now(), ch });
   };
   routes['POST /chat/send'] = async (req, res, body, me) => {
     if (slowmode(me + 'chat', 1500)) return fail(res, 429, 'Slow down');
     const box = boxOf(me, 'chat'), m = compose(res, me, box, body); if (!m) return;
+    const ch = chOf(body.ch); if (ch) m.ch = ch;
     pushChat(m); afterSend(me, box, m);
-    toDiscord(m.sticker ? Object.assign({}, m, { text: (m.text ? m.text + '\n' : '') + `${PUBLIC_URL}/img/stickers/${m.sticker}.png` }) : m);
+    if (!ch) toDiscord(m.sticker ? Object.assign({}, m, { text: (m.text ? m.text + '\n' : '') + `${PUBLIC_URL}/img/stickers/${m.sticker}.png` }) : m);
     send(res, 200, { ok: true, id: m.id });
+  };
+  /** Channels: General + every server people are playing on or chatting about. */
+  routes['GET /chat/channels'] = async (req, res, body, me) => {
+    const map = new Map();
+    for (const [u, p] of presence) { const ip = chOf(p.server); if (ip && isOnline(u)) { const e = map.get(ip) || { ch: ip, online: 0, last: 0 }; e.online++; map.set(ip, e); } }
+    const week = now() - 7 * 86400000;
+    for (const m of H.chat) if (m.ch && m.at > week) { const e = map.get(m.ch) || { ch: m.ch, online: 0, last: 0 }; e.last = Math.max(e.last, m.at); map.set(m.ch, e); }
+    const mine = presence.get(me), here = mine && isOnline(me) ? chOf(mine.server) : '';
+    const list = [...map.values()].sort((a, b) => (b.ch === here) - (a.ch === here) || b.online - a.online || b.last - a.last).slice(0, 25);
+    send(res, 200, { channels: [{ ch: '', name: 'General', online: 0 }].concat(list.map(e => Object.assign(e, { name: e.ch }))), here });
+  };
+  /* Voice messages: up to 60 s of audio (webm/ogg/opus from the browser). One every 10 s. */
+  routes['POST /chat/voice'] = async (req, res, body, me) => {
+    if (!checkText(res, me, 'voice message')) return;
+    if (slowmode(me + 'voice', 10000)) return fail(res, 429, 'One voice message every 10 seconds');
+    const buf = Buffer.from(String(body.audio || ''), 'base64');
+    const isWebm = buf.slice(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3])), isOgg = buf.slice(0, 4).toString() === 'OggS', isMp4 = buf.slice(4, 8).toString() === 'ftyp';
+    if (!isWebm && !isOgg && !isMp4) return fail(res, 400, 'Unknown audio format');
+    if (buf.length > 1200000) return fail(res, 413, 'Too long (max about a minute)');
+    const id = crypto.randomBytes(9).toString('hex');
+    fs.writeFileSync(path.join(HUB_IMG, 'v' + id), buf);
+    const dur = Math.max(1, Math.min(60, Math.round(Number(body.dur) || 1)));
+    const where = String(body.where || 'chat');
+    const box = boxOf(me, where); if (!box) return fail(res, 404, 'Chat not found');
+    const m = { id: H.seq++, uuid: me, text: '', at: now(), voice: { id, dur, type: isWebm ? 'webm' : isOgg ? 'ogg' : 'mp4' } };
+    if (box.kind === 'chat') { const ch = chOf(body.ch); if (ch) m.ch = ch; pushChat(m); if (!ch) toDiscord(Object.assign({}, m, { text: `[voice message] ${PUBLIC_URL}/chat/voice?id=${id}` })); }
+    else { box.msgs.push(m); if (box.msgs.length > 500) box.msgs.shift(); save(); }
+    afterSend(me, box, m);
+    send(res, 200, { ok: true, id: m.id });
+  };
+  routes['GET /chat/voice'] = async (req, res) => {
+    const id = String(q(req).get('id') || ''); if (!/^[a-f0-9]{18}$/.test(id)) return fail(res, 400, 'bad id');
+    const f = path.join(HUB_IMG, 'v' + id); if (!fs.existsSync(f)) return fail(res, 404, 'gone');
+    const buf = fs.readFileSync(f);
+    const type = buf.slice(0, 4).toString() === 'OggS' ? 'audio/ogg' : buf.slice(4, 8).toString() === 'ftyp' ? 'audio/mp4' : 'audio/webm';
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    send(res, 200, buf, type);
   };
 
   // ---- DMs (replaces the simpler versions) ----

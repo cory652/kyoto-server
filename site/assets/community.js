@@ -348,7 +348,7 @@
     // body render
     const body = await loadImg(`https://mc-heads.net/body/${encodeURIComponent(c.name)}/420`);
     if (body) { g.save(); g.shadowColor = acc; g.shadowBlur = 60; g.drawImage(body, 70, 110, 420 * body.width / body.height * .98, 470); g.restore(); }
-    const logo = await loadImg('/img/logos/logo_k_starry.png'); if (logo) g.drawImage(logo, W - 108, 44, 56, 56);
+    const logo = await loadImg('/img/logos/torii_starry.png'); if (logo) g.drawImage(logo, W - 108, 44, 56, 56);
     g.fillStyle = '#fff'; g.font = '800 22px Poppins, sans-serif'; g.textAlign = 'right'; g.fillText('KYOTO CLIENT', W - 124, 82); g.textAlign = 'left';
     const x0 = 420;
     g.font = '600 20px Inter, sans-serif'; g.fillStyle = acc; g.fillText(c.title.toUpperCase() + (c.owner ? ' · OWNER' : c.plus ? ' · KYOTO+' : c.staff ? ' · STAFF' : ''), x0, 170);

@@ -1754,7 +1754,7 @@ function serveSite(req, res, pathname) {
     if (html) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }); res.end(html); return true; }
   }
   const stat = fs.statSync(file);
-  const headers = { 'Content-Type': SITE_TYPES[ext] || 'application/octet-stream', 'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=86400' };
+  const headers = { 'Content-Type': SITE_TYPES[ext] || 'application/octet-stream', 'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=600' };
   // videos need range requests so browsers can seek/stream them
   const range = /bytes=(\d*)-(\d*)/.exec(req.headers.range || '');
   if (range && (ext === '.mp4' || ext === '.webm')) {
@@ -1796,6 +1796,11 @@ const server = http.createServer(async (req, res) => {
       let html = fs.readFileSync(path.join(SITE, 'overlay.html'), 'utf8');
       if (qs !== undefined) html = html.replace('<div id="root"></div>', `<div id="root"></div><script>window.KY_Q = ${JSON.stringify(qs).replace(/</g, '\\u003c')};</script>`);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }); return res.end(html);
+    }
+    // one place to change the launcher download: every button links here
+    if (req.method === 'GET' && (url.pathname === '/get/launcher' || url.pathname === '/get/launcher/')) {
+      res.writeHead(302, { Location: process.env.LAUNCHER_URL || 'https://github.com/kyotoclient/kyoto-server/releases/download/v7.0.0/Kyoto.Launcher.exe', 'Cache-Control': 'no-cache' });
+      return res.end();
     }
     // browsers get the website, the mod/launcher (no text/html Accept) keep getting JSON
     if (req.method === 'GET' && (String(req.headers.accept || '').includes('text/html') || /^\/(assets|img|media|fonts)\//.test(url.pathname) || /\.(css|js|png|jpg|webp|svg|mp4|webm|woff2|ico)$/.test(url.pathname))) {

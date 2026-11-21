@@ -3,7 +3,7 @@
 const CONFIG = {
   // The Kyoto server. Same server hosts this site, so normally it's just this page's address.
   api: /onrender\.com$|localhost|127\.0\.0\.1/.test(location.hostname) ? location.origin : 'https://kyoto-server.onrender.com',
-  launcherUrl: 'https://github.com/kyotoclient/kyoto-server/releases/download/v7.0.0/Kyoto.Launcher.exe',   // >>> link to the launcher .exe (GitHub release) <<<
+  launcherUrl: '/get/launcher',   // >>> link to the launcher .exe (GitHub release) <<<
   discordUrl: '',    // >>> your Discord invite <<<
   // >>> your socials (leave '' to hide one) <<<
   socials: { discord: '', tiktok: '', youtube: '', twitch: '', x: '', instagram: '' },
@@ -49,7 +49,7 @@ function season() {
 let theme = season();
 function setTheme(t) {
   theme = THEMES.includes(t) ? t : 'starry';
-  $$('.logo-k').forEach(l => { l.src = `/img/logos/logo_k_${theme}.png`; });
+  $$('.logo-k').forEach(l => { l.src = `/img/logos/torii_${theme}.png`; });
   document.documentElement.style.setProperty('--tint', '235,235,238');
   const pill = $('#themePill'); if (pill) { pill.textContent = theme === 'starry' ? '' : ({ newyear: 'Happy New Year', valentines: "Happy Valentine's", easter: 'Happy Easter', halloween: 'Happy Halloween', thanksgiving: 'Happy Thanksgiving', christmas: 'Merry Christmas' })[theme]; pill.hidden = theme === 'starry'; }
 }

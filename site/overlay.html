@@ -247,7 +247,7 @@ const NAME = /^[A-Za-z0-9_]{2,16}$/.test(Q.get('name') || '') ? Q.get('name') : 
 const QRON = Q.get('qr') !== '0';
 const SITE = (Q.get('site') || 'kyoto-server.onrender.com').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const API = location.protocol === 'file:' ? 'https://kyoto-server.onrender.com' : '';
-const LOGO = '/img/logos/logo_k_' + (() => { const d = new Date(), m = d.getMonth() + 1, day = d.getDate();
+const LOGO = '/img/logos/torii_' + (() => { const d = new Date(), m = d.getMonth() + 1, day = d.getDate();
   if (m === 12 && day >= 27 || m === 1 && day <= 2) return 'newyear'; if (m === 12) return 'christmas'; if (m === 10 && day >= 15) return 'halloween';
   if (m === 11 && day <= 28) return 'thanksgiving'; if (m >= 3 && m <= 5) return 'spring'; if (m >= 6 && m <= 8) return 'summer'; if (m >= 9 && m <= 11) return 'fall'; return 'starry'; })() + '.png';
 // phones are small: on vertical streams everything starts a bit bigger
@@ -432,7 +432,7 @@ function scene() {
   const kind = (Q.get('scene') || 'start').toLowerCase();
   const T = { start: ['Stream starting', 'Starting soon'], brb: ['Be right back', 'BRB'], end: ['Thanks for watching', 'See you soon'] }[kind] || ['Stream starting', 'Starting soon'];
   const title = Q.get('title') || T[1];
-  const ART = LOGO.replace('/logos/logo_k_', '/').replace('.png', '.webp');
+  const ART = LOGO.replace('/logos/torii_', '/').replace('.png', '.webp');
   const mins = Number(Q.get('timer')) || 0, until = mins ? Date.now() + mins * 60000 : 0;
   const s = document.createElement('div'); s.className = 'scene';
   s.innerHTML = `<div class="art-bg" style="background-image:url(${ART})"></div><div class="tint"></div><canvas class="fx"></canvas>

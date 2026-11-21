@@ -132,7 +132,7 @@
         ${f.pinned ? '<span class="ribbon">Pinned</span>' : (Date.now() - f.at < 7 * 864e5 ? '<span class="ribbon">New</span>' : '')}
         <span class="nwhen">${esc(when(f.at))}</span>
         <div class="nbody"><small>${esc(f.tag)}</small><h3>${esc(f.title)}</h3>
-          <div class="nfoot"><span class="by"><img class="logo-k" src="/img/logos/logo_k_${theme}.png" alt="">Kyoto team</span><span class="more">${icon('arrow')} Read more</span></div></div></article>
+          <div class="nfoot"><span class="by"><img class="logo-k" src="/img/logos/torii_${theme}.png" alt="">Kyoto team</span><span class="more">${icon('arrow')} Read more</span></div></div></article>
       <div class="nside">${rest.slice(0, 4).map(n => `<article class="ncard row" data-nid="${esc(n.id)}"><div class="nimg" style="background-image:url('${esc(artFor(n))}')"></div>
         <div class="nbody"><small>${esc(n.tag)} · ${esc(when(n.at))}</small><h4>${esc(n.title)}</h4></div><span class="go">${icon('arrow')}</span></article>`).join('')}</div>`;
     $$('#newsGrid [data-nid]').forEach(c => c.onclick = () => openArticle(c.dataset.nid));

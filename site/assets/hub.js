@@ -267,7 +267,7 @@
       ${!m.me ? `<button data-rep="${m.id}" title="Report">${icon('flag')}</button>` : ''}</div>` : me && m.discord && m.id ? `<div class="mtools"><button data-rep2="${m.id}" title="Reply">${icon('reply')}</button><button data-rep="${m.id}" title="Report">${icon('flag')}</button>${me.staff ? `<button data-mdel="${m.id}" title="Delete">${icon('trash')}</button>` : ''}</div>` : '';
     const pin = m.pinned ? `<span class="mpinned" title="Pinned">${icon('pin')}</span>` : '';
     if (grouped) return `<div class="msg cont${m.me ? ' mine' : ''}" data-mid="${m.id}"><span class="mtime">${new Date(m.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span><div class="mb">${body}</div>${pin}${tools}</div>`;
-    return `<div class="msg${m.me ? ' mine' : ''}" data-mid="${m.id}"><img class="mav" src="${m.discord ? (m.avatar || '/img/favicon.png') : headUrl(m.name)}" alt="">
+    return `<div class="msg${m.me ? ' mine' : ''}" data-mid="${m.id}"><img class="mav" src="${m.discord ? (m.avatar || '/img/torii-icon.png') : headUrl(m.name)}" alt="">
       <div class="mb">${rq}<div class="mh">${m.discord ? `<b>${esc(m.name)}</b><span class="tag dc">Discord</span>` : `<a href="/u/${encodeURIComponent(m.name)}" data-link><b>${esc(m.name)}</b></a>${m.owner ? '<span class="tag own">Owner</span>' : m.staff ? '<span class="tag mod">Mod</span>' : ''}${m.plus ? '<span class="tag plus">K+</span>' : ''}`}<span class="mtime2">${time(m.at)}</span></div>${body}</div>${pin}${tools}</div>`;
   }
   function giftHtml(m) {

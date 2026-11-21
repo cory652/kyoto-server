@@ -80,7 +80,6 @@
     $('#modeBtn').onclick = () => { localStorage.setItem('kyoto.mode', document.documentElement.classList.contains('light') ? 'dark' : 'light'); applyMode(); };
     $('#langSel').onchange = e => { lang = e.target.value; localStorage.setItem('kyoto.lang', lang); translateChrome(); applyMode(); if (!$('#page-more').hidden) openMore(location.pathname); };
     // more links in the menu + footer
-    const ml = $('.menu-links'); if (ml) ml.insertAdjacentHTML('beforeend', NAV.map(([k, n]) => `<a href="/${k}" data-link>${esc(n)}</a>`).join(''));
     const fr = $('#siteFoot .f-row'); if (fr) { const legal = $('.f-legal', fr); NAV.forEach(([k, n]) => { const a = document.createElement('a'); a.href = '/' + k; a.dataset.link = ''; a.textContent = n; fr.insertBefore(a, $('#themePill') || legal); }); }
     applyMode(); translateChrome();
   })();

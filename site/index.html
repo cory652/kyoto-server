@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="/assets/site.css?v=12">
 <link rel="stylesheet" href="/assets/home.css?v=10">
 <link rel="stylesheet" href="/assets/more.css?v=1">
-<link rel="stylesheet" href="/assets/mono.css?v=1">
+<link rel="stylesheet" href="/assets/mono.css?v=2">
 <script>try { if (localStorage.getItem('kyoto.mode') === 'light') document.documentElement.classList.add('light'); } catch (e) {}</script>
 </head>
 <body>
@@ -40,7 +40,7 @@
     </div>
   </div>
   <nav class="nav-sub">
-    <a href="/news" data-link>News</a><a href="/changelog" data-link>Changelog</a><a href="/#features" data-link>Features</a><a href="/store" data-link>Cosmetics</a><a href="/studio" data-link>Studio</a>
+    <a href="/news" data-link>News</a><a href="/changelog" data-link>Changelog</a><a href="/#features" data-link>Features</a><a href="/store" data-link>Cosmetics</a><a href="/studio" data-link>Studio <em class="wip">WIP</em></a>
     <a href="/hub" data-link>Hub</a><a href="/creators" data-link>Community</a><a href="/download#faq" data-link>Support</a>
     <a href="/#socials" data-link>Socials</a><a href="/#plus" data-link class="plus-link">Kyoto+</a>
   </nav>
@@ -48,9 +48,11 @@
 
 <div id="menu" hidden>
   <div class="menu-inner">
-    <nav class="menu-links">
-      <a href="/news" data-link>News</a><a href="/changelog" data-link>Changelog</a><a href="/#features" data-link>Features</a><a href="/store" data-link>Cosmetics</a><a href="/hub" data-link>Hub</a><a href="/creators" data-link>Creators</a><a href="/leaderboards" data-link>Leaderboards</a><a href="/skins" data-link>Skin gallery</a><a href="/wishlist" data-link>Wishlist</a><a href="/invite" data-link>Invite friends</a>
-      <a href="/studio" data-link>Kyoto Studio</a><a href="/download" data-link>Download</a><a href="/download#faq" data-link>Support</a><a href="/edit" data-link>Edit profile</a>
+    <nav class="menu-links menu-groups">
+      <div class="mg"><small>Play</small><a href="/download" data-link>Download</a><a href="/#features" data-link>Features</a><a href="/changelog" data-link>Changelog</a><a href="/news" data-link>News</a></div>
+      <div class="mg"><small>Community</small><a href="/hub" data-link>Hub</a><a href="/creators" data-link>Creators</a><a href="/leaderboards" data-link>Leaderboards</a><a href="/events" data-link>Events</a></div>
+      <div class="mg"><small>You</small><a href="/edit" data-link>Edit profile</a><a href="/store" data-link>Cosmetics</a><a href="/badges" data-link>Badges</a><a href="/wrapped" data-link>Wrapped</a></div>
+      <div class="mg"><small>More</small><a href="/studio" data-link>Kyoto Studio <em class="wip">WIP</em></a><a href="/download#faq" data-link>Support</a><a href="/feedback" data-link>Feedback</a><a href="/skins" data-link>Skin gallery</a></div>
     </nav>
     <div class="menu-side"><img class="logo-k" src="/img/logos/logo_k_starry.png" alt=""><p>The best client is just a mod.</p><div class="soc" id="menuSoc"></div></div>
   </div>
@@ -191,7 +193,7 @@
 <!-- ======================= STORE ======================= -->
 <main id="page-store" class="page subpage" hidden>
   <header class="phero cos-hero"><span class="eyebrow">Cosmetics</span><h1>Capes &amp; cosmetics</h1><p>Get anything here and it goes straight to your Kyoto account. Wear it in game, no downloads, and every Kyoto player sees it.</p>
-    <div class="phero-acts"><button class="btn glow" id="cosSell">__I_plus__ Post a cosmetic</button><a class="btn ghost" href="/studio" data-link>__I_sparkles__ Make one in Kyoto Studio</a><span class="coinpill" id="cosCoins">__I_coin__ <b>0</b> coins</span></div></header>
+    <div class="phero-acts"><button class="btn glow" id="cosSell">__I_plus__ Post a cosmetic</button><a class="btn ghost" href="/studio" data-link>__I_sparkles__ Kyoto Studio (WIP)</a><span class="coinpill" id="cosCoins">__I_coin__ <b>0</b> coins</span></div></header>
   <div class="sbar">
     <div class="ntabs big" id="cosView"><button class="on" data-cv="browse">Browse</button><button data-cv="locker">My Locker</button></div>
     <div class="sbar-r"><div class="ntabs" id="storeKinds"><button class="on" data-sk="all">Everything</button><button data-sk="kycos">Cosmetics</button><button data-sk="cape">Capes</button><button data-sk="pack">Packs</button></div>
@@ -271,7 +273,7 @@
       <div class="dl-card main reveal">
         <img src="/media/launcher.webp" alt="Kyoto Launcher">
         <div class="dl-body"><h3>__I_rocket__ Kyoto Launcher</h3><p>Pick your Minecraft version and press Play. It installs Fabric, Fabric API and the right Kyoto build for you, and keeps them updated.</p>
-          <a class="btn big glow" id="dlLauncher" href="https://github.com/kyotoclient/kyoto-server/releases/download/v6.11.0/Kyoto.Launcher.exe">__I_download__ Download for Windows</a></div>
+          <a class="btn big glow" id="dlLauncher" href="https://github.com/kyotoclient/kyoto-server/releases/download/v7.0.0/Kyoto.Launcher.exe">__I_download__ Download for Windows</a></div>
       </div>
       <div class="dl-card reveal">
         <div class="dl-body"><h3>__I_layers__ Just the mod</h3><p>Already use Fabric? Drop the jar into your mods folder next to Fabric API.</p>
@@ -294,10 +296,10 @@
 <!-- ======================= KYOTO STUDIO ======================= -->
 <main id="page-studio" class="page subpage" hidden>
   <header class="studio-hero">
-    <div class="sh-text"><span class="eyebrow">Kyoto Studio</span><h1>Make skins. Build cosmetics.<br><span class="grad">Wear them in seconds.</span></h1>
+    <div class="sh-text"><span class="eyebrow">Kyoto Studio · Work in progress</span><h1>Make skins. Build cosmetics.<br><span class="grad">Wear them in seconds.</span></h1>
       <p>A free 3D editor in your browser: paint your Minecraft skin pixel by pixel, build hats, wings and backpacks out of voxels, turn any GIF into an animated cape, and post it all to the Kyoto Hub.</p>
-      <div class="phero-acts"><a class="btn big glow" href="https://github.com/kyotoclient/kyoto-server/releases/download/v6.11.0/Kyoto.Studio.exe">__I_download__ Download for Windows</a><a class="btn big ghost" href="/builder">__I_sparkles__ Use it in your browser</a></div>
-      <p class="muted small" style="margin-top:12px">The app adds projects that save by themselves, templates, a step-by-step tutorial and posting to the Store with automatic photos. Free.</p></div>
+      <div class="wipnote"><b>Work in progress.</b> Kyoto Studio is being rebuilt for the new look. The download is paused for now; you can try the browser version while you wait.</div>
+      <div class="phero-acts"><a class="btn big ghost" href="/builder">__I_sparkles__ Try it in your browser</a></div></div>
     <div class="sh-art"><img src="/media/studio.webp" alt="Kyoto Studio" loading="lazy"></div>
   </header>
   <section class="sfeat">

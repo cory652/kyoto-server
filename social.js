@@ -430,10 +430,18 @@ module.exports = function social(ctx) {
   };
 
   /* ================================================================ friends (with status + streaks) ================================================================ */
+  // Kyoto Hub tells the server which game you're in (any game, not just Minecraft)
+  const hubGames = new Map(); // uuid -> { game, at }
+  routes['POST /hub/presence'] = async (req, res, body, me) => {
+    const game = clean(body.game, 60);
+    if (game) hubGames.set(me, { game, at: Date.now() }); else hubGames.delete(me);
+    send(res, 200, { ok: true });
+  };
+  const hubGame = u => { const h = hubGames.get(u); return h && Date.now() - h.at < 150000 ? h.game : ''; };
   routes['GET /friends'] = async (req, res, body, me) => {
     const friends = list(db.friends, me).map(u => {
-      const st = statusOf(u, me), p = presence.get(u) || {};
-      return { uuid: u, name: nameOf(u), online: st.online, mode: st.mode, statusText: st.text, server: st.online ? p.server || '' : '', join: st.online ? p.join || '' : '', calls: st.online ? !!p.calls : false, streak: streakOf(me, u) };
+      const st = statusOf(u, me), p = presence.get(u) || {}, hg = (db.status[u] || {}).mode === 'invisible' ? '' : hubGame(u);
+      return { uuid: u, name: nameOf(u), online: st.online || !!hg, mode: st.online ? st.mode : (hg ? 'online' : st.mode), statusText: st.text, game: hg, server: st.online ? p.server || '' : '', join: st.online ? p.join || '' : '', calls: st.online ? !!p.calls : false, streak: streakOf(me, u) };
     });
     const incoming = Object.entries(db.requests).filter(([, tos]) => tos.includes(me)).map(([from]) => (db.users[from] || {}).name).filter(Boolean);
     const outgoing = list(db.requests, me).map(u => (db.users[u] || {}).name).filter(Boolean);

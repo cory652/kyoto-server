@@ -208,8 +208,7 @@ const FAQ = [['Is Kyoto free?', 'Yes. No account to buy, no subscription, no ads
   ['Does it work with other mods?', 'Yes, it\'s a normal Fabric mod. Use it with Sodium, Iris, Mod Menu and most others.']];
 $('#faqList').innerHTML = FAQ.map(([q, a]) => `<details class="reveal"><summary>${esc(q)}${icon('chevron')}</summary><p>${esc(a)}</p></details>`).join('');
 $('#footDiscord').href = CONFIG.discordUrl || '#'; if (!CONFIG.discordUrl) $('#footDiscord').style.display = 'none';
-$('#dlLauncher').onclick = e => { if (!CONFIG.launcherUrl) { e.preventDefault(); toast('Launcher download', 'The download link is coming soon - grab it from the Kyoto Discord.'); } };
-if (CONFIG.launcherUrl) $('#dlLauncher').href = CONFIG.launcherUrl;
+$('#dlLauncher').onclick = e => { e.preventDefault(); toast('Launcher is being worked on', 'Use the mod jar for now.'); };
 
 function countUp(el, to) { const t0 = performance.now(); (function f(n) { const k = Math.min(1, (n - t0) / 1400); el.textContent = Math.round(to * (1 - (1 - k) ** 3)).toLocaleString(); if (k < 1) requestAnimationFrame(f); })(t0); }
 api('/stats', { auth: false }).then(s => { $('#navOnline b').textContent = s.online; const lo = $('#liveOnline'); if (lo) lo.textContent = s.online; window.KY_STATS = s; countUp($('[data-count=online]'), s.online); countUp($('[data-count=users]'), s.users); }).catch(() => { $('#navOnline').style.display = 'none'; });

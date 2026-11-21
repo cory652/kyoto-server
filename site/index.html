@@ -10,10 +10,10 @@
 <link rel="icon" href="/img/torii-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&family=Playfair+Display:wght@600;800&family=Silkscreen&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/site.css?v=31">
-<link rel="stylesheet" href="/assets/home.css?v=31">
-<link rel="stylesheet" href="/assets/more.css?v=31">
-<link rel="stylesheet" href="/assets/mono.css?v=31">
+<link rel="stylesheet" href="/assets/site.css?v=32">
+<link rel="stylesheet" href="/assets/home.css?v=32">
+<link rel="stylesheet" href="/assets/more.css?v=32">
+<link rel="stylesheet" href="/assets/mono.css?v=32">
 <script>try { if (localStorage.getItem('kyoto.mode') === 'light') document.documentElement.classList.add('light'); } catch (e) {}</script>
 </head>
 <body>
@@ -82,7 +82,7 @@
   </section>
 
   <section class="tiles" id="tiles">
-    <a class="tile" href="/download" data-link style="--img:url(/media/launcher-v7.webp)"><small>One launcher, every version</small><b>Single<br>Install</b><span>Press Play. Fabric, Fabric API and Kyoto set themselves up.</span></a>
+    <a class="tile" href="/download" data-link style="--img:url(/media/launcher-v7.webp)"><small>Launcher coming soon</small><b>Drop-in<br>Mod</b><span>One jar in your Fabric mods folder and you're in.</span></a>
     <a class="tile" href="#screens" data-scroll style="--img:url(/media/base.webp)"><small>Movie night in your world</small><b>Video<br>Screens</b><span>YouTube, Twitch, Kick and more, in sync with friends.</span></a>
     <a class="tile" href="#sky-time" data-scroll style="--img:url(/media/sky-night.webp)"><small>Galaxies, auroras, golden hour</small><b>Custom<br>Skies</b><span>Paint your own sky and pick your time of day.</span></a>
     <a class="tile" href="#hub" data-scroll style="--img:url(/media/hub.webp)"><small>Every Kyoto player</small><b>Kyoto<br>Hub</b><span>Chat, friends, calls, shared setups and capes.</span></a>
@@ -265,26 +265,27 @@
 
 <!-- ======================= DOWNLOAD ======================= -->
 <main id="page-download" class="page subpage" hidden>
-  <header class="phero dl-hero"><span class="eyebrow">Download</span><h1>Get Kyoto Client</h1><p>Free forever. Press Play and the launcher sets up Fabric, Fabric API and Kyoto for you.</p>
+  <header class="phero dl-hero"><span class="eyebrow">Download</span><h1>Get Kyoto Client</h1><p>Free forever. Grab the mod jar below and drop it in your Fabric mods folder. The launcher is being worked on.</p>
     <div class="dl-meta"><span>__I_monitor__ Windows 10 / 11</span><span>__I_layers__ Minecraft <b id="dlMc">26.3</b></span><span>__I_check__ Your own Minecraft account</span><span>__I_shield__ No ads, nothing bannable</span></div></header>
 <section id="download" class="section dl-page">
     
     <div class="dl-grid">
       <div class="dl-card main reveal">
-        <img src="/media/launcher-v7.webp" alt="Kyoto Launcher">
-        <div class="dl-body"><h3>__I_rocket__ Kyoto Launcher</h3><p>Pick your Minecraft version and press Play. It installs Fabric, Fabric API and the right Kyoto build for you, and keeps them updated.</p>
-          <a class="btn big glow" id="dlLauncher" href="/get/launcher">__I_download__ Download for Windows</a></div>
+        <div class="dl-body"><h3>__I_layers__ Kyoto Client mod</h3><p>Works now. Drop the jar into your mods folder next to Fabric API and start Minecraft with Fabric.</p>
+          <div id="jarList" class="jars"></div></div>
       </div>
       <div class="dl-card reveal">
-        <div class="dl-body"><h3>__I_layers__ Just the mod</h3><p>Already use Fabric? Drop the jar into your mods folder next to Fabric API.</p>
-          <div id="jarList" class="jars"></div></div>
+        <img src="/media/launcher-v7.webp" alt="Kyoto Launcher">
+        <div class="dl-body"><h3>__I_rocket__ Kyoto Launcher <em class="wip">WIP</em></h3><p>One-click install for Fabric, Fabric API and Kyoto.</p>
+          <div class="wipnote"><b>Being worked on.</b> The launcher download is paused while we fix it. Use the mod jar for now.</div>
+          <a class="btn big" id="dlLauncher" href="#" aria-disabled="true" style="opacity:.45;pointer-events:none">__I_download__ Coming soon</a></div>
       </div>
     </div>
   </section>
   <section class="steps">
-    <div class="step"><b>1</b><h4>Download the launcher</h4><p>Run <code>Kyoto.Launcher.exe</code>. Windows may ask if you trust it; click More info, then Run anyway.</p></div>
-    <div class="step"><b>2</b><h4>Pick your version</h4><p>Choose 26.x on the Home screen. Older versions are being ported and show as coming soon.</p></div>
-    <div class="step"><b>3</b><h4>Press Play</h4><p>Sign in with Microsoft the first time. Kyoto installs itself and keeps itself updated.</p></div>
+    <div class="step"><b>1</b><h4>Install Fabric</h4><p>Get the Fabric installer from fabricmc.net and install it for Minecraft 26.3.</p></div>
+    <div class="step"><b>2</b><h4>Add the mods</h4><p>Put the Kyoto jar and Fabric API in <code>.minecraft\mods</code> (press Win+R and type <code>%appdata%\.minecraft</code>).</p></div>
+    <div class="step"><b>3</b><h4>Play</h4><p>Open the Minecraft Launcher, pick the Fabric profile and press Play.</p></div>
     <div class="step"><b>4</b><h4>Right Shift</h4><p>Opens the Kyoto menu in game. N opens waypoints, K the lyrics menu.</p></div>
   </section>
 <section id="faq" class="section narrow">
@@ -487,13 +488,13 @@
 <main id="page-user" class="page" hidden><div class="profile-root full" id="userRoot"></div></main>
 
 <div id="toasts"></div>
-<script src="/assets/icons.js?v=31"></script>
-<script src="/assets/room.js?v=31"></script>
-<script src="/assets/site.js?v=31"></script>
-<script src="/assets/home.js?v=31"></script>
-<script src="/assets/pages.js?v=31"></script>
-<script src="/assets/hub.js?v=31"></script>
-<script src="/assets/community.js?v=31"></script>
-<script src="/assets/more.js?v=31"></script>
+<script src="/assets/icons.js?v=32"></script>
+<script src="/assets/room.js?v=32"></script>
+<script src="/assets/site.js?v=32"></script>
+<script src="/assets/home.js?v=32"></script>
+<script src="/assets/pages.js?v=32"></script>
+<script src="/assets/hub.js?v=32"></script>
+<script src="/assets/community.js?v=32"></script>
+<script src="/assets/more.js?v=32"></script>
 </body>
 </html>
